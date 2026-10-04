@@ -122,15 +122,15 @@ export default async function Home() {
         </h2>
         <ol className="grid gap-4 sm:grid-cols-3">
           {steps.map((s, i) => (
-            <li key={s.title}>
-              <Card>
+            <li key={s.title} className="h-full">
+              <Card className="flex h-full flex-col">
                 <CardHeader>
                   <span className="text-primary font-mono text-sm">
                     0{i + 1}
                   </span>
                   <CardTitle>{s.title}</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex-1">
                   <p className="text-sm text-muted-foreground">{s.body}</p>
                 </CardContent>
               </Card>
@@ -146,7 +146,10 @@ export default async function Home() {
           {Object.values(TIERS).map((t) => (
             <Card
               key={t.id}
-              className={t.id === "boost" ? "border-primary" : undefined}
+              className={
+                "flex h-full flex-col" +
+                (t.id === "boost" ? " border-primary" : "")
+              }
             >
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -157,7 +160,7 @@ export default async function Home() {
                   {t.feeSol} <span className="text-base font-normal">SOL</span>
                 </p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex-1">
                 <CardDescription className="space-y-1">
                   <p>AI makes the coin identity.</p>
                   <p>One launch transaction.</p>
@@ -208,8 +211,8 @@ export default async function Home() {
         ) : (
           <ul className="grid gap-4 sm:grid-cols-4">
             {launches.map((l) => (
-              <li key={l.mint}>
-                <Card>
+              <li key={l.mint} className="h-full">
+                <Card className="flex h-full flex-col">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={l.imageUri}
@@ -217,7 +220,7 @@ export default async function Home() {
                     className="aspect-square w-full rounded-md object-cover"
                     loading="lazy"
                   />
-                  <CardHeader className="p-3">
+                  <CardHeader className="flex-1 p-3">
                     <CardTitle className="truncate text-sm">
                       {l.symbol}
                     </CardTitle>
