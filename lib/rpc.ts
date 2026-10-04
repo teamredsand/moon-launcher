@@ -33,20 +33,26 @@ export interface SwarmWallet {
 
 let cached: SwarmWallet[] | null = null;
 
-/** Boost wallets from SWARM_WALLETS (JSON array of base58 secrets). */
+/** Boost wallets from SWARM_WALLETS (JSON array of base64 secrets) or from
+ * chunked vars SWARM_WALLETS_1..N (Vercel 4 KB var limit). */
 export function swarmWallets(): SwarmWallet[] {
   if (cached) return cached;
-  const raw = process.env.SWARM_WALLETS;
   cached = [];
-  if (raw) {
+  const raws: string[] = [];
+  if (process.env.SWARM_WALLETS) raws.push(process.env.SWARM_WALLETS);
+  for (let i = 1; i <= 20; i++) {
+    const v = process.env[`SWARM_WALLETS_${i}`];
+    if (v) raws.push(v);
+  }
+  for (const raw of raws) {
     try {
       const secrets = JSON.parse(raw) as string[];
-      cached = secrets.map((s) => {
+      for (const s of secrets) {
         const kp = Keypair.fromSecretKey(Buffer.from(s, "base64"));
-        return { pubkey: kp.publicKey.toBase58(), kp };
-      });
+        cached.push({ pubkey: kp.publicKey.toBase58(), kp });
+      }
     } catch {
-      cached = [];
+      /* skip bad chunk */
     }
   }
   return cached;
