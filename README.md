@@ -35,6 +35,31 @@ They start empty — each burst call tops up its batch from the treasury out
 of the customer's deposit (treasury pays buys + gas and keeps the 25%
 margin by construction). No pre-funding, no env-size problem.
 
+## Swarm buy economics (per wallet, mainnet-measured)
+
+| Item | SOL | Retrievable? |
+| --- | --- | --- |
+| Buy tx fee | 0.000005 | No — burned |
+| ATA rent (170 B Token-2022) | 0.00204 | Yes — returned on close |
+| Consolidation tx fee | 0.000005 | No — burned |
+| Funding tx fee (amortized ÷6) | 0.0000008 | No — burned |
+| Sweep slop + buffer dust | ~0.000089 | Yes, via later dust sweeps |
+
+- True unrecoverable cost: **≈ 0.000011 SOL/wallet** (network fees).
+- The "network costs" line (0.0022/wallet) is almost fully recycled:
+  treasury fronts rent + buffer, consolidation closes ATAs and sweeps
+  ~0.0021 back. Net gas line ≈ +0.0001/wallet.
+- The 25% margin **never leaves the treasury**: the customer deposits the
+  calculated price, only (buys + gas) is distributed, the rest stays.
+- Example: 1000 wallets × 0.001 SOL → price 4.267 SOL → into the coin 1.0,
+  gas 2.2 (mostly recycled), treasury nets **≈ 1.14 SOL**
+  (1.067 margin + ~0.09 gas surplus − 0.011 burn).
+- The 1% pump.fun curve fee on each buy is the customer's cost, embedded in
+  the token price; it does not touch the treasury either way.
+
+Wallet sets are derived per mint (`sha256(seed‖mint‖i)`) — every job gets a
+fresh, unique set of addresses; no cross-job fingerprint on-chain.
+
 ## AI launch tiers
 
 | Tier | Price | Contents |

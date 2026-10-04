@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -36,10 +37,14 @@ export function CustomFlow() {
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [description, setDescription] = useState("");
+  const [website, setWebsite] = useState("");
+  const [twitter, setTwitter] = useState("");
+  const [telegram, setTelegram] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [coinUrl, setCoinUrl] = useState<string | null>(null);
+  const [mint, setMint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -61,6 +66,9 @@ export function CustomFlow() {
       fd.append("name", name.trim());
       fd.append("symbol", symbol.trim().toUpperCase());
       fd.append("description", description.trim());
+      if (website.trim()) fd.append("website", website.trim());
+      if (twitter.trim()) fd.append("twitter", twitter.trim());
+      if (telegram.trim()) fd.append("telegram", telegram.trim());
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "upload failed");
@@ -72,7 +80,7 @@ export function CustomFlow() {
     } finally {
       setBusy(false);
     }
-  }, [file, name, symbol, description]);
+  }, [file, name, symbol, description, website, twitter, telegram]);
 
   const signAndSend = useCallback(async () => {
     if (!publicKey || !signTransaction || !metadataUri || !imageUri) return;
@@ -105,6 +113,7 @@ export function CustomFlow() {
       });
       const pj = await prep.json();
       if (!prep.ok) throw new Error(pj.error ?? "prepare failed");
+      setMint(pj.mint);
 
       setPhase("signing");
       const { VersionedTransaction } = await import("@solana/web3.js");
@@ -209,6 +218,35 @@ export function CustomFlow() {
                 rows={3}
               />
             </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="website">Website (optional)</Label>
+                <Input
+                  id="website"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  placeholder="https://…"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="twitter">X / Twitter (optional)</Label>
+                <Input
+                  id="twitter"
+                  value={twitter}
+                  onChange={(e) => setTwitter(e.target.value)}
+                  placeholder="https://x.com/…"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="telegram">Telegram (optional)</Label>
+                <Input
+                  id="telegram"
+                  value={telegram}
+                  onChange={(e) => setTelegram(e.target.value)}
+                  placeholder="https://t.me/…"
+                />
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="image">Image (max 5 MB)</Label>
               <Input
@@ -290,7 +328,7 @@ export function CustomFlow() {
           <CardHeader>
             <CardTitle>Your coin is live</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-3 text-sm">
             <p>
               <a
                 href={coinUrl}
@@ -304,6 +342,14 @@ export function CustomFlow() {
             <p>
               The first tokens are in your wallet. You own the coin.
             </p>
+            {mint && (
+              <Link
+                href={`/launch/boost?mint=${mint}`}
+                className={buttonVariants({ variant: "outline", className: "w-full" })}
+              >
+                Boost this coin now
+              </Link>
+            )}
           </CardContent>
         </Card>
       )}

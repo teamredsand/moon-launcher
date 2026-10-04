@@ -2,16 +2,33 @@
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-import dynamic from "next/dynamic";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { Button } from "@/components/ui/button";
 
-const WalletMultiButton = dynamic(
-  () =>
-    import("@solana/wallet-adapter-react-ui").then((m) => m.WalletMultiButton),
-  { ssr: false }
-);
-
-/** The site's single call to action: connect a wallet. Same look as the
- * other buttons (the wallet-adapter CSS is overridden in globals.css). */
+/** The site's single call to action. Same shadcn Button as everything else:
+ * disconnected → primary "Connect wallet" opens the wallet modal;
+ * connected → outline button with the short address, click to disconnect. */
 export function ConnectWallet() {
-  return <WalletMultiButton />;
+  const { publicKey, connected, connecting, disconnect } = useWallet();
+  const { setVisible } = useWalletModal();
+
+  if (connected && publicKey) {
+    const s = publicKey.toBase58();
+    return (
+      <Button
+        variant="outline"
+        className="font-mono"
+        onClick={() => disconnect()}
+        title="Disconnect"
+      >
+        {s.slice(0, 4)}…{s.slice(-4)}
+      </Button>
+    );
+  }
+  return (
+    <Button onClick={() => setVisible(true)} disabled={connecting}>
+      {connecting ? "Connecting…" : "Connect wallet"}
+    </Button>
+  );
 }

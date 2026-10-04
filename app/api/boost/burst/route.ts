@@ -14,7 +14,8 @@ interface BurstBody {
   customer?: string;
   tier?: string; // "boost" | "moonshot" (AI add-on) or "swarm" (standalone)
   paymentSig?: string;
-  buys?: number; // swarm mode: total buy count
+  buys?: number; // swarm mode: wallet count
+  perBuy?: number; // swarm mode: SOL per buy (server re-prices it)
 }
 
 /** One boost burst. The browser calls this every ~20s until done. */
@@ -91,9 +92,17 @@ export async function POST(req: Request) {
     }
     let perBuy: bigint;
     if (isSwarm) {
-      const q = swarmQuote(Number(received) / 1e9, target);
+      // server re-prices the declared (perBuy, buys) and checks the deposit
+      const q = swarmQuote(Number(body.perBuy ?? 0), target);
       if (!q.valid) {
         return NextResponse.json({ error: q.reason }, { status: 402 });
+      }
+      const need = BigInt(Math.floor(q.depositSol * 1e9 * 0.99)); // 1% rounding tolerance
+      if (received < need) {
+        return NextResponse.json(
+          { error: `deposit too small — needs ${q.depositSol.toFixed(3)} SOL` },
+          { status: 402 }
+        );
       }
       perBuy = BigInt(Math.floor(q.perBuySol * 1e9));
     } else {

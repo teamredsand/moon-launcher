@@ -26,7 +26,9 @@ import { swarmWallets, treasury } from "./rpc";
 
 export const BUY_LAMPORTS = 500_000n; // default per-buy (AI-tier boost)
 export const BURST_SIZE = 6;
-const SWARM_MIN_BALANCE_BUFFER = 200_000n; // tx fees headroom per buy
+const FUND_GAS_LAMPORTS = 2_200_000n; // ATA rent + fees + buffer per buy
+const RENT_RELEASE_LAMPORTS = 2_000_000n; // ATA rent (170 B) minus slop
+const TX_COST_BUFFER_LAMPORTS = 25_000n; // fee + safety for the sweep tx
 
 export function curveForMint(mint: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
@@ -60,7 +62,7 @@ async function ownedWallets(
   mint: PublicKey,
   limit?: number
 ): Promise<Set<string>> {
-  const wallets = subset(limit);
+  const wallets = subset(limit, mint.toBase58());
   const atas = wallets.map((w) => findAta(w.kp.publicKey, mint));
   const used = new Set<string>();
   for (let i = 0; i < atas.length; i += 100) {
@@ -72,9 +74,10 @@ async function ownedWallets(
   return used;
 }
 
-/** Deterministic wallet subset for a tier (sorted by pubkey, first `limit`). */
-function subset(limit?: number): Swarm[] {
-  const all = [...swarmWallets()].sort((a, b) =>
+/** Deterministic wallet subset: fresh addresses per mint (salted
+ * derivation), sorted by pubkey, first `limit`. */
+function subset(limit?: number, salt?: string): Swarm[] {
+  const all = [...swarmWallets(salt)].sort((a, b) =>
     a.pubkey.localeCompare(b.pubkey)
   );
   return limit ? all.slice(0, limit) : all;
@@ -99,7 +102,7 @@ export async function progress(
   limit?: number
 ): Promise<BoostProgress> {
   const done = (await ownedWallets(conn, mint, limit)).size;
-  const target = subset(limit).length;
+  const target = subset(limit, mint.toBase58()).length;
   return { done, target, remaining: Math.max(target - done, 0) };
 }
 
@@ -111,7 +114,7 @@ async function pickBuyers(
   n: number,
   limit?: number
 ): Promise<Keypair[]> {
-  const wallets = subset(limit);
+  const wallets = subset(limit, mint.toBase58());
   const used = await ownedWallets(conn, mint, limit);
   const out: Keypair[] = [];
   for (const w of wallets) {
@@ -167,7 +170,7 @@ export async function fireBurst(
   const buyLamports = perBuyLamports ?? BUY_LAMPORTS;
   const pool = await pickBuyers(conn, mint, BURST_SIZE, limit);
   if (pool.length === 0) return 0;
-  await fundBatch(conn, pool, buyLamports + SWARM_MIN_BALANCE_BUFFER);
+  await fundBatch(conn, pool, buyLamports + FUND_GAS_LAMPORTS);
   const state = await curveState(conn, curveForMint(mint));
   if (!state) throw new Error("curve unreadable — coin not launched?");
   const estOut = quoteCp(state.vSol, state.vTok, buyLamports, 100);
@@ -210,8 +213,9 @@ export async function consolidateChunk(
   limit?: number,
   chunk = 15
 ): Promise<number> {
-  const wallets = subset(limit);
+  const wallets = subset(limit, mint.toBase58());
   const { blockhash } = await conn.getLatestBlockhash();
+  const t = treasury();
   let moved = 0;
   for (const w of wallets) {
     if (moved >= chunk) break;
@@ -223,10 +227,25 @@ export async function consolidateChunk(
     if (!amountRaw || BigInt(amountRaw) <= 0n) continue;
     const amount = BigInt(amountRaw);
     const ixs: TransactionInstruction[] = [
-      buyerAtaCreateIx(customer, customer, mint), // idempotent
+      buyerAtaCreateIx(w.kp.publicKey, customer, mint), // idempotent, swarm wallet pays
       t22Transfer(findAta(w.kp.publicKey, mint), findAta(customer, mint), w.kp.publicKey, amount),
       t22CloseAccount(ata, w.kp.publicKey),
     ];
+    // sweep leftover SOL (fee buffer + ATA rent released by the close) back
+    // to the treasury; conservative rent estimate so the tx never underflows
+    if (t) {
+      const bal = BigInt(await conn.getBalance(w.kp.publicKey));
+      const sweep = bal + RENT_RELEASE_LAMPORTS - TX_COST_BUFFER_LAMPORTS;
+      if (bal > TX_COST_BUFFER_LAMPORTS && sweep > 0n) {
+        ixs.push(
+          SystemProgram.transfer({
+            fromPubkey: w.kp.publicKey,
+            toPubkey: t.publicKey,
+            lamports: Number(sweep),
+          })
+        );
+      }
+    }
     const msg = new TransactionMessage({
       payerKey: w.kp.publicKey,
       instructions: ixs,

@@ -128,56 +128,18 @@ export default async function Home() {
       <section className="flex flex-col items-center gap-6 py-20 text-center sm:py-28">
         <MoonLogo className="size-12 text-primary" />
         <h1 className="max-w-2xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">
-          Launch a coin on pump.fun
+          Launch, boost &amp; swarm tokens on pump.fun
         </h1>
         <p className="max-w-xl text-muted-foreground text-balance">
-          Type a theme. The service makes the name, the symbol, the text, and
-          the image. Your wallet signs one transaction. The coin is live.
+          AI makes the identity, or you write it. Up to 1000 wallets buy. Your
+          wallet keeps the tokens.
         </p>
-        <div className="flex gap-3">
-          <Link
-            href="/launch"
-            className={buttonVariants({ size: "lg", variant: "outline" })}
-          >
-            Launch a coin
-          </Link>
-          <Link
-            href="/#how"
-            className={buttonVariants({ size: "lg", variant: "outline" })}
-          >
-            See how it works
-          </Link>
-        </div>
         <p className="text-sm text-muted-foreground">
-          Starts at 0.25 SOL. No key sharing. Your wallet keeps the tokens.
+          Pick a service below. No key sharing. Your wallet keeps the tokens.
         </p>
       </section>
 
       <Separator />
-
-      {/* How it works */}
-      <section id="how" className="scroll-mt-20 py-16">
-        <h2 className="mb-8 text-2xl font-semibold tracking-tight">
-          How it works
-        </h2>
-        <ol className="grid gap-4 sm:grid-cols-3">
-          {steps.map((s, i) => (
-            <li key={s.title} className="h-full">
-              <Card className="flex h-full flex-col">
-                <CardHeader>
-                  <span className="text-primary font-mono text-sm">
-                    0{i + 1}
-                  </span>
-                  <CardTitle>{s.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <p className="text-sm text-muted-foreground">{s.body}</p>
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-        </ol>
-      </section>
 
       {/* Services */}
       <section id="services" className="scroll-mt-20 py-16">
@@ -217,6 +179,30 @@ export default async function Home() {
         <p className="mt-4 text-sm text-muted-foreground">
           These are start prices. They can change.
         </p>
+      </section>
+
+      {/* How it works */}
+      <section id="how" className="scroll-mt-20 py-16">
+        <h2 className="mb-8 text-2xl font-semibold tracking-tight">
+          How it works
+        </h2>
+        <ol className="grid gap-4 sm:grid-cols-3">
+          {steps.map((s, i) => (
+            <li key={s.title} className="h-full">
+              <Card className="flex h-full flex-col">
+                <CardHeader>
+                  <span className="text-primary font-mono text-sm">
+                    0{i + 1}
+                  </span>
+                  <CardTitle>{s.title}</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1">
+                  <p className="text-sm text-muted-foreground">{s.body}</p>
+                </CardContent>
+              </Card>
+            </li>
+          ))}
+        </ol>
       </section>
 
       {/* Launches */}

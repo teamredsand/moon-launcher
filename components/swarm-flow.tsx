@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { Button } from "@/components/ui/button";
@@ -17,11 +18,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   SWARM_GAS_PER_BUY,
-  SWARM_MARGIN,
   SWARM_MAX_BUYS,
-  SWARM_MAX_DEPOSIT_SOL,
+  SWARM_MAX_PER_BUY_SOL,
   SWARM_MIN_BUYS,
-  SWARM_MIN_DEPOSIT_SOL,
+  SWARM_MIN_PER_BUY_SOL,
   swarmQuote,
 } from "@/lib/pricing";
 
@@ -30,9 +30,10 @@ type Phase = "setup" | "depositing" | "buying" | "consolidating" | "done";
 export function SwarmFlow() {
   const { connection } = useConnection();
   const { publicKey, signTransaction, connected } = useWallet();
+  const params = useSearchParams();
 
-  const [mint, setMint] = useState("");
-  const [deposit, setDeposit] = useState(2);
+  const [mint, setMint] = useState(params.get("mint") ?? "");
+  const [perBuy, setPerBuy] = useState(0.001);
   const [buys, setBuys] = useState(100);
   const [phase, setPhase] = useState<Phase>("setup");
   const [progress, setProgress] = useState({ done: 0, target: 0 });
@@ -42,7 +43,7 @@ export function SwarmFlow() {
   const [estTokens, setEstTokens] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const q = useMemo(() => swarmQuote(deposit, buys), [deposit, buys]);
+  const q = useMemo(() => swarmQuote(perBuy, buys), [perBuy, buys]);
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
@@ -54,7 +55,7 @@ export function SwarmFlow() {
     const id = setTimeout(async () => {
       try {
         const res = await fetch(
-          `/api/boost/quote?mint=${encodeURIComponent(mint)}&deposit=${deposit}&buys=${buys}`
+          `/api/boost/quote?mint=${encodeURIComponent(mint)}&perBuy=${perBuy}&buys=${buys}`
         );
         const j = await res.json();
         setCurveOk(Boolean(j.curveOk));
@@ -67,7 +68,7 @@ export function SwarmFlow() {
       }
     }, 600);
     return () => clearTimeout(id);
-  }, [mint, deposit, buys, q.valid]);
+  }, [mint, perBuy, buys, q.valid]);
 
   const payAndStart = useCallback(async () => {
     if (!publicKey || !signTransaction || !q.valid) return;
@@ -77,9 +78,9 @@ export function SwarmFlow() {
       const treasury = process.env.NEXT_PUBLIC_TREASURY;
       if (!treasury) throw new Error("service not configured");
       const bal = await connection.getBalance(publicKey);
-      if (bal < (deposit + 0.005) * LAMPORTS_PER_SOL) {
+      if (bal < (q.depositSol + 0.005) * LAMPORTS_PER_SOL) {
         throw new Error(
-          `Your wallet needs ${(deposit + 0.005).toFixed(2)} SOL. It has ${(bal / LAMPORTS_PER_SOL).toFixed(3)} SOL.`
+          `Your wallet needs ${(q.depositSol + 0.005).toFixed(2)} SOL. It has ${(bal / LAMPORTS_PER_SOL).toFixed(3)} SOL.`
         );
       }
       setPhase("depositing");
@@ -87,7 +88,7 @@ export function SwarmFlow() {
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(treasury),
-          lamports: Math.round(deposit * LAMPORTS_PER_SOL),
+          lamports: Math.round(q.depositSol * LAMPORTS_PER_SOL),
         })
       );
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
@@ -110,6 +111,7 @@ export function SwarmFlow() {
             customer: publicKey.toBase58(),
             tier: "swarm",
             buys,
+            perBuy,
             paymentSig,
           }),
         });
@@ -132,7 +134,7 @@ export function SwarmFlow() {
     } finally {
       setBusy(false);
     }
-  }, [publicKey, signTransaction, q.valid, deposit, buys, mint, connection]);
+  }, [publicKey, signTransaction, q, buys, perBuy, mint, connection]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
@@ -158,9 +160,9 @@ export function SwarmFlow() {
           <CardHeader>
             <CardTitle>Set up the buy</CardTitle>
             <CardDescription>
-              Give the address of a coin on pump.fun. Up to {SWARM_MAX_BUYS}{" "}
-              wallets buy it. All tokens go to your wallet. The service keeps{" "}
-              {SWARM_MARGIN * 100}% of the deposit.
+              Give the address of a coin on pump.fun. Set the size of each buy
+              and the number of wallets. The price is calculated for you. All
+              tokens go to your wallet.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -186,24 +188,24 @@ export function SwarmFlow() {
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <Label htmlFor="deposit">Deposit</Label>
-                <span className="font-mono">{deposit.toFixed(1)} SOL</span>
+                <Label htmlFor="perBuy">Size of each buy</Label>
+                <span className="font-mono">{perBuy.toFixed(4)} SOL</span>
               </div>
               <input
-                id="deposit"
+                id="perBuy"
                 type="range"
-                min={SWARM_MIN_DEPOSIT_SOL}
-                max={SWARM_MAX_DEPOSIT_SOL}
-                step={0.5}
-                value={deposit}
-                onChange={(e) => setDeposit(Number(e.target.value))}
+                min={SWARM_MIN_PER_BUY_SOL}
+                max={SWARM_MAX_PER_BUY_SOL}
+                step={0.0005}
+                value={perBuy}
+                onChange={(e) => setPerBuy(Number(e.target.value))}
                 className="w-full accent-[var(--primary)]"
               />
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <Label htmlFor="buys">Number of buys</Label>
+                <Label htmlFor="buys">Wallets</Label>
                 <span className="font-mono">{buys}</span>
               </div>
               <input
@@ -220,17 +222,19 @@ export function SwarmFlow() {
 
             <div className="rounded-md border border-border p-4 text-sm space-y-1 font-mono">
               <p>
-                Deposit: <span className="text-foreground">{deposit.toFixed(2)} SOL</span>
+                Price:{" "}
+                <span className="text-primary text-base">
+                  {q.depositSol.toFixed(3)} SOL
+                </span>
               </p>
               <p className="text-muted-foreground">
-                Service fee (25%): {q.feeSol.toFixed(3)} SOL
+                Into the coin ({buys} × {perBuy.toFixed(4)}): {q.buySol.toFixed(3)} SOL
               </p>
               <p className="text-muted-foreground">
                 Network costs ({buys} × {SWARM_GAS_PER_BUY}): {q.gasSol.toFixed(3)} SOL
               </p>
-              <p>
-                Per buy:{" "}
-                <span className="text-primary">{q.perBuySol.toFixed(5)} SOL</span>
+              <p className="text-muted-foreground">
+                Service fee: {q.feeSol.toFixed(3)} SOL
               </p>
               {estTokens && (
                 <p className="text-muted-foreground">
@@ -251,7 +255,7 @@ export function SwarmFlow() {
               onClick={payAndStart}
               disabled={busy || !connected || !q.valid || curveOk === false || mint.length < 32}
             >
-              {busy ? "Working…" : `Deposit ${deposit.toFixed(2)} SOL and start`}
+              {busy ? "Working…" : `Pay ${q.depositSol.toFixed(3)} SOL and start`}
             </Button>
           </CardFooter>
         </Card>
@@ -260,7 +264,7 @@ export function SwarmFlow() {
       {phase === "depositing" && (
         <Card>
           <CardContent className="pt-6">
-            Sign the deposit in your wallet…
+            Sign the payment in your wallet…
           </CardContent>
         </Card>
       )}

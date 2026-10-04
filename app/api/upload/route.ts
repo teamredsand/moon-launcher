@@ -17,6 +17,11 @@ export async function POST(req: Request) {
   const name = String(form.get("name") ?? "").slice(0, 32);
   const symbol = String(form.get("symbol") ?? "").slice(0, 10);
   const description = String(form.get("description") ?? "").slice(0, 280);
+  const socials = {
+    website: String(form.get("website") ?? "").slice(0, 128) || undefined,
+    twitter: String(form.get("twitter") ?? "").slice(0, 128) || undefined,
+    telegram: String(form.get("telegram") ?? "").slice(0, 128) || undefined,
+  };
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "file missing" }, { status: 400 });
   }
@@ -32,7 +37,7 @@ export async function POST(req: Request) {
       name,
       symbol,
       description,
-    });
+    }, socials);
     return NextResponse.json({ imageUri, metadataUri });
   } catch (e) {
     return NextResponse.json(

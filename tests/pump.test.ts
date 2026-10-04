@@ -207,23 +207,24 @@ describe("pricing", () => {
   });
 });
 
-describe("swarm quote", () => {
-  it("25% margin, gas, and per-buy math", () => {
-    const q = swarmQuote(2, 100);
-    expect(q.feeSol).toBeCloseTo(0.5);
+describe("swarm quote (price = (buys + gas) / (1 - margin))", () => {
+  it("calculates the deposit with the margin inside", () => {
+    const q = swarmQuote(0.001, 100);
+    expect(q.buySol).toBeCloseTo(0.1);
     expect(q.gasSol).toBeCloseTo(100 * SWARM_GAS_PER_BUY);
-    expect(q.perBuySol).toBeCloseTo((2 - 0.5 - q.gasSol) / 100, 8);
+    expect(q.depositSol).toBeCloseTo((0.1 + q.gasSol) / (1 - SWARM_MARGIN), 8);
+    expect(q.feeSol).toBeCloseTo(q.depositSol - 0.1 - q.gasSol, 8);
     expect(q.valid).toBe(true);
   });
-  it("rejects deposits too small for the buy count", () => {
-    const q = swarmQuote(0.5, 500);
-    expect(q.valid).toBe(false);
-    expect(q.reason).toMatch(/at least/);
+  it("margin is 25% of the deposit", () => {
+    const q = swarmQuote(0.001, 100);
+    expect(q.feeSol).toBeCloseTo(q.depositSol * SWARM_MARGIN, 8);
   });
   it("rejects out-of-range inputs", () => {
-    expect(swarmQuote(2, 5).valid).toBe(false);
-    expect(swarmQuote(2, 1001).valid).toBe(false);
-    expect(swarmQuote(60, 100).valid).toBe(false);
+    expect(swarmQuote(0.001, 5).valid).toBe(false);
+    expect(swarmQuote(0.001, 1001).valid).toBe(false);
+    expect(swarmQuote(0.0001, 100).valid).toBe(false);
+    expect(swarmQuote(0.06, 100).valid).toBe(false);
   });
   it("margin constant is 25%", () => {
     expect(SWARM_MARGIN).toBe(0.25);
@@ -247,6 +248,19 @@ describe("swarm derivation", () => {
       .update(Buffer.from([5, 0, 0, 0]))
       .digest();
     expect(Keypair.fromSeed(h).publicKey.toBase58()).toBe(w1[5].pubkey);
+    delete process.env.SWARM_SEED;
+  });
+  it("different mints get fresh wallet sets (per-job salting)", async () => {
+    process.env.SWARM_SEED = Buffer.alloc(32, 7).toString("base64");
+    const fresh = await import("../lib/rpc?salt-test=1");
+    const a = fresh.swarmWallets("mintA");
+    const b = fresh.swarmWallets("mintB");
+    const setA = new Set(a.map((w) => w.pubkey));
+    expect(b.every((w) => !setA.has(w.pubkey))).toBe(true);
+    expect(a.length).toBe(1000);
+    // same salt → same set (progress and retries must agree)
+    const a2 = fresh.swarmWallets("mintA");
+    expect(a2[0].pubkey).toBe(a[0].pubkey);
     delete process.env.SWARM_SEED;
   });
 });

@@ -14,7 +14,8 @@ export interface IpfsResult {
 
 export async function uploadToIpfs(
   image: Buffer,
-  identity: { name: string; symbol: string; description: string }
+  identity: { name: string; symbol: string; description: string },
+  socials?: { website?: string; twitter?: string; telegram?: string }
 ): Promise<IpfsResult> {
   const boundary =
     "----moonlauncher" + Math.random().toString(16).slice(2, 14);
@@ -29,6 +30,9 @@ export async function uploadToIpfs(
   field("name", identity.name);
   field("symbol", identity.symbol);
   field("description", identity.description);
+  if (socials?.website) field("website", socials.website);
+  if (socials?.twitter) field("twitter", socials.twitter);
+  if (socials?.telegram) field("telegram", socials.telegram);
   field("showName", "true");
   field("createdOn", "https://pump.fun");
   parts.push(

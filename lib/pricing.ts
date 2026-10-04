@@ -92,37 +92,40 @@ export const SWARM_MARGIN = 0.25; // service keeps 25% of the deposit
 export const SWARM_GAS_PER_BUY = 0.0022; // tx fee + ATA rent + buffer, SOL
 export const SWARM_MIN_BUYS = 10;
 export const SWARM_MAX_BUYS = 1000;
-export const SWARM_MIN_DEPOSIT_SOL = 0.5;
-export const SWARM_MAX_DEPOSIT_SOL = 50;
 export const SWARM_MIN_PER_BUY_SOL = 0.0005;
+export const SWARM_MAX_PER_BUY_SOL = 0.05;
+export const SWARM_MIN_DEPOSIT_SOL = 0.1;
+export const SWARM_MAX_DEPOSIT_SOL = 75;
 
 export interface SwarmQuote {
-  depositSol: number;
-  buys: number;
-  feeSol: number; // 25% margin
+  perBuySol: number; // what each wallet spends (user picks this)
+  buys: number; // how many wallets (user picks this)
+  buySol: number; // perBuy * buys — SOL that goes into the coin
   gasSol: number; // buys * gas
-  perBuySol: number; // what each wallet spends
+  depositSol: number; // calculated price, margin included
+  feeSol: number; // service revenue (margin)
   valid: boolean;
   reason?: string;
 }
 
-export function swarmQuote(depositSol: number, buys: number): SwarmQuote {
-  const feeSol = depositSol * SWARM_MARGIN;
+/** Deposit = (buys + gas) / (1 - margin): the 25% margin is inside the
+ * calculated price. */
+export function swarmQuote(perBuySol: number, buys: number): SwarmQuote {
+  const buySol = perBuySol * buys;
   const gasSol = buys * SWARM_GAS_PER_BUY;
-  const pool = depositSol - feeSol - gasSol;
-  const perBuySol = buys > 0 ? pool / buys : 0;
+  const depositSol = (buySol + gasSol) / (1 - SWARM_MARGIN);
+  const feeSol = depositSol - buySol - gasSol;
   let valid = true;
   let reason: string | undefined;
   if (buys < SWARM_MIN_BUYS || buys > SWARM_MAX_BUYS) {
     valid = false;
-    reason = `buys must be ${SWARM_MIN_BUYS}–${SWARM_MAX_BUYS}`;
+    reason = `wallets must be ${SWARM_MIN_BUYS}–${SWARM_MAX_BUYS}`;
+  } else if (perBuySol < SWARM_MIN_PER_BUY_SOL || perBuySol > SWARM_MAX_PER_BUY_SOL) {
+    valid = false;
+    reason = `buy size must be ${SWARM_MIN_PER_BUY_SOL}–${SWARM_MAX_PER_BUY_SOL} SOL`;
   } else if (depositSol < SWARM_MIN_DEPOSIT_SOL || depositSol > SWARM_MAX_DEPOSIT_SOL) {
     valid = false;
-    reason = `deposit must be ${SWARM_MIN_DEPOSIT_SOL}–${SWARM_MAX_DEPOSIT_SOL} SOL`;
-  } else if (perBuySol < SWARM_MIN_PER_BUY_SOL) {
-    valid = false;
-    const minDeposit = (gasSol + buys * SWARM_MIN_PER_BUY_SOL) / (1 - SWARM_MARGIN);
-    reason = `deposit too small for ${buys} buys — needs at least ${minDeposit.toFixed(2)} SOL`;
+    reason = `calculated price ${depositSol.toFixed(2)} SOL is outside ${SWARM_MIN_DEPOSIT_SOL}–${SWARM_MAX_DEPOSIT_SOL} SOL`;
   }
-  return { depositSol, buys, feeSol, gasSol, perBuySol, valid, reason };
+  return { perBuySol, buys, buySol, gasSol, depositSol, feeSol, valid, reason };
 }

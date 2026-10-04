@@ -7,15 +7,16 @@ import { connection } from "@/lib/rpc";
 
 export const maxDuration = 30;
 
-/** Swarm quote: validates deposit/buys and estimates tokens per buy from the
- * live bonding curve. GET ?mint=..&deposit=2&buys=100 */
+/** Swarm quote: validates per-buy size + wallet count, returns the
+ * calculated deposit (margin included) and live token estimates.
+ * GET ?mint=..&perBuy=0.001&buys=100 */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const mint = searchParams.get("mint");
-  const deposit = Number(searchParams.get("deposit") ?? "0");
+  const perBuy = Number(searchParams.get("perBuy") ?? "0");
   const buys = Number(searchParams.get("buys") ?? "0");
   if (!mint) return NextResponse.json({ error: "mint missing" }, { status: 400 });
-  const q = swarmQuote(deposit, buys);
+  const q = swarmQuote(perBuy, buys);
 
   const conn = connection();
   let curveOk = false;

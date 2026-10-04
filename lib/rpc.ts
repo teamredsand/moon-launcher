@@ -34,27 +34,35 @@ export interface SwarmWallet {
   kp: Keypair;
 }
 
-let cached: SwarmWallet[] | null = null;
+const swarmCache = new Map<string, SwarmWallet[]>();
 
-/** Boost wallets. Derived deterministically from SWARM_SEED
- * (sha256(seed || u32le(i)) as the ed25519 seed) — one 32-byte secret gives
- * up to SWARM_SIZE wallets, which fits Vercel's env limits. Falls back to
- * SWARM_WALLETS / SWARM_WALLETS_1..N (base64 JSON arrays) when no seed. */
-export function swarmWallets(): SwarmWallet[] {
-  if (cached) return cached;
-  cached = [];
+/** Boost wallets. Derived deterministically from SWARM_SEED:
+ * sha256(seed || salt || u32le(i)) as the ed25519 seed. With a per-mint
+ * salt, every job gets a fresh, unique set of addresses — no cross-coin
+ * fingerprint. One 32-byte secret covers any number of jobs (and fits
+ * Vercel's env limits). Falls back to SWARM_WALLETS / SWARM_WALLETS_1..N
+ * (base64 JSON arrays) when no seed is set. */
+export function swarmWallets(salt?: string): SwarmWallet[] {
+  const key = salt ?? "";
+  const hit = swarmCache.get(key);
+  if (hit) return hit;
+  if (swarmCache.size > 20) swarmCache.delete(swarmCache.keys().next().value!);
+  const out: SwarmWallet[] = [];
   const seedB64 = process.env.SWARM_SEED;
   if (seedB64) {
     const seed = Buffer.from(seedB64, "base64");
+    const saltBuf = salt ? Buffer.from(salt, "utf8") : Buffer.alloc(0);
     for (let i = 0; i < SWARM_SIZE; i++) {
       const h = createHash("sha256")
         .update(seed)
+        .update(saltBuf)
         .update(Buffer.from([i & 0xff, (i >> 8) & 0xff, (i >> 16) & 0xff, (i >> 24) & 0xff]))
         .digest();
       const kp = Keypair.fromSeed(h);
-      cached.push({ pubkey: kp.publicKey.toBase58(), kp });
+      out.push({ pubkey: kp.publicKey.toBase58(), kp });
     }
-    return cached;
+    swarmCache.set(key, out);
+    return out;
   }
   const raws: string[] = [];
   if (process.env.SWARM_WALLETS) raws.push(process.env.SWARM_WALLETS);
@@ -67,11 +75,12 @@ export function swarmWallets(): SwarmWallet[] {
       const secrets = JSON.parse(raw) as string[];
       for (const s of secrets) {
         const kp = Keypair.fromSecretKey(Buffer.from(s, "base64"));
-        cached.push({ pubkey: kp.publicKey.toBase58(), kp });
+        out.push({ pubkey: kp.publicKey.toBase58(), kp });
       }
     } catch {
       /* skip bad chunk */
     }
   }
-  return cached;
+  swarmCache.set(key, out);
+  return out;
 }
