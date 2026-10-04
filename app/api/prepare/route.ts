@@ -5,7 +5,7 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 import { buyerAtaCreateIx, createCoinIx, feeTransferIx, freshCurveMinOut, nativeBuyIx } from "@/lib/pump";
-import { IGNITION_FEE_SOL, launchTxNeeds, solToLamports, tier } from "@/lib/pricing";
+import { CUSTOM_FEE_SOL, IGNITION_FEE_SOL, launchTxNeeds, solToLamports, tier } from "@/lib/pricing";
 import { connection, treasuryPubkey } from "@/lib/rpc";
 import { anchorSeedPairs, compileV0, simulate, v0Transaction } from "@/lib/sim";
 import { generateIdentity, generateImage } from "@/lib/minimax";
@@ -22,6 +22,7 @@ interface Identity {
 
 export async function POST(req: Request) {
   let body: {
+    mode?: "ai" | "custom";
     theme?: string;
     identity?: Identity;
     metadataUri?: string;
@@ -36,6 +37,8 @@ export async function POST(req: Request) {
   }
 
   const t = tier(body.tier ?? "ignition");
+  const isCustom = body.mode === "custom";
+  const launchFee = isCustom ? CUSTOM_FEE_SOL : IGNITION_FEE_SOL;
   if (!body.customer) {
     return NextResponse.json({ error: "customer missing" }, { status: 400 });
   }
@@ -57,6 +60,12 @@ export async function POST(req: Request) {
   let imageUri = body.imageUri;
   try {
     if (!identity || !metadataUri || !imageUri) {
+      if (isCustom) {
+        return NextResponse.json(
+          { error: "custom mode needs identity + metadataUri + imageUri" },
+          { status: 400 }
+        );
+      }
       if (!body.theme || body.theme.length < 3) {
         return NextResponse.json({ error: "theme missing" }, { status: 400 });
       }
@@ -70,6 +79,18 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: `identity failed: ${(e as Error).message}` },
       { status: 502 }
+    );
+  }
+  if (
+    !identity ||
+    identity.name.length > 32 ||
+    identity.symbol.length > 10 ||
+    !metadataUri ||
+    !imageUri
+  ) {
+    return NextResponse.json(
+      { error: "bad identity (name ≤ 32 chars, symbol ≤ 10)" },
+      { status: 400 }
     );
   }
 
@@ -98,7 +119,7 @@ export async function POST(req: Request) {
         solIn,
         minOut,
       }),
-      feeTransferIx(customer, treasury, solToLamports(IGNITION_FEE_SOL)),
+      feeTransferIx(customer, treasury, solToLamports(launchFee)),
     ];
     const { message } = await compileV0(conn, customer, ixs);
     const tx = v0Transaction(message);
@@ -138,7 +159,7 @@ export async function POST(req: Request) {
       solIn,
       minOut,
     }),
-    feeTransferIx(customer, treasury, solToLamports(IGNITION_FEE_SOL)),
+    feeTransferIx(customer, treasury, solToLamports(launchFee)),
   ];
   const { message } = await compileV0(conn, customer, ixs);
   const tx = v0Transaction(message);
@@ -147,8 +168,11 @@ export async function POST(req: Request) {
   return NextResponse.json({
     txB64: Buffer.from(tx.serialize()).toString("base64"),
     mint: mint.publicKey.toBase58(),
-    needsSolLamports: launchTxNeeds(t).toString(),
+    needsSolLamports: isCustom
+      ? (8_000_000n + solToLamports(t.firstBuySol) + solToLamports(CUSTOM_FEE_SOL)).toString()
+      : launchTxNeeds(t).toString(),
     tier: t.id,
+    mode: isCustom ? "custom" : "ai",
     identity,
     imageUri,
     metadataUri,

@@ -1,10 +1,7 @@
 "use client";
 
-import "@solana/wallet-adapter-react-ui/styles.css";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -209,9 +206,13 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">
-          Launch a coin
+          AI launch
         </h1>
-        <WalletMultiButton />
+        {!connected && (
+          <p className="text-sm text-muted-foreground">
+            Connect your wallet in the top right.
+          </p>
+        )}
       </div>
 
       {error && (

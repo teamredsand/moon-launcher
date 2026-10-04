@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { MoonWordMark } from "@/components/moon-logo";
-import { buttonVariants } from "@/components/ui/button";
+import { ConnectWallet } from "@/components/connect-wallet";
 
 const links = [
   { href: "/#how", label: "How it works" },
-  { href: "/#pricing", label: "Pricing" },
+  { href: "/#services", label: "Services" },
   { href: "/#launches", label: "Launches" },
   { href: "/#faq", label: "FAQ" },
 ];
@@ -27,9 +27,7 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <Link href="/launch" className={buttonVariants({})}>
-          Launch a coin
-        </Link>
+        <ConnectWallet />
       </div>
     </header>
   );

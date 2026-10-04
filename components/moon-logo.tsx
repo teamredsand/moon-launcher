@@ -18,7 +18,7 @@ export function MoonWordMark({ className }: { className?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <MoonLogo className="size-5 text-primary" />
-      <span className="font-semibold tracking-tight">MoonLauncher</span>
+      <span className="font-heading tracking-tight text-lg">MoonLauncher</span>
     </span>
   );
 }

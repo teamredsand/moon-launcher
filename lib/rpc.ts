@@ -1,4 +1,7 @@
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { createHash } from "crypto";
+
+export const SWARM_SIZE = 1000;
 
 export function connection(): Connection {
   const url =
@@ -33,11 +36,26 @@ export interface SwarmWallet {
 
 let cached: SwarmWallet[] | null = null;
 
-/** Boost wallets from SWARM_WALLETS (JSON array of base64 secrets) or from
- * chunked vars SWARM_WALLETS_1..N (Vercel 4 KB var limit). */
+/** Boost wallets. Derived deterministically from SWARM_SEED
+ * (sha256(seed || u32le(i)) as the ed25519 seed) — one 32-byte secret gives
+ * up to SWARM_SIZE wallets, which fits Vercel's env limits. Falls back to
+ * SWARM_WALLETS / SWARM_WALLETS_1..N (base64 JSON arrays) when no seed. */
 export function swarmWallets(): SwarmWallet[] {
   if (cached) return cached;
   cached = [];
+  const seedB64 = process.env.SWARM_SEED;
+  if (seedB64) {
+    const seed = Buffer.from(seedB64, "base64");
+    for (let i = 0; i < SWARM_SIZE; i++) {
+      const h = createHash("sha256")
+        .update(seed)
+        .update(Buffer.from([i & 0xff, (i >> 8) & 0xff, (i >> 16) & 0xff, (i >> 24) & 0xff]))
+        .digest();
+      const kp = Keypair.fromSeed(h);
+      cached.push({ pubkey: kp.publicKey.toBase58(), kp });
+    }
+    return cached;
+  }
   const raws: string[] = [];
   if (process.env.SWARM_WALLETS) raws.push(process.env.SWARM_WALLETS);
   for (let i = 1; i <= 20; i++) {

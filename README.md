@@ -6,17 +6,36 @@ is live.
 
 ## What it does
 
-1. **Identity.** An AI model (MiniMax) makes the name, the symbol, the
-   description, and the image. The image and metadata go to IPFS through
-   pump.fun's own upload API.
-2. **Launch.** One transaction creates the coin, buys the first tokens, and
-   pays the service fee. The customer's wallet signs it. The service holds no
-   funds.
-3. **Boost (paid option).** Up to 250 service wallets buy the coin in small
-   steps. All tokens then move to the customer's wallet. The customer
-   controls the supply.
+Three services, three slugs:
 
-## Tiers
+1. **Custom launch** (`/launch/custom`) — 0.15 SOL flat. The customer writes
+   the name, the symbol, and the text, and uploads the image. The service
+   pins it to IPFS and builds the launch transaction.
+2. **Swarm buy** (`/launch/boost`) — 25% of the deposit. The customer gives
+   any pump.fun coin address and deposits SOL (0.5–50). Up to 1000 service
+   wallets buy the coin in small bursts. All tokens move to the customer's
+   wallet. The deposit covers buys + network costs; the service keeps 25%.
+3. **AI launch** (`/launch/ai`) — 0.25 / 0.75 / 1.75 SOL. MiniMax makes the
+   name, symbol, description, and image. Atomic launch, optional boost with
+   100 or 250 wallets.
+
+Non-custodial everywhere: the customer's wallet signs every payment; the
+service holds no customer funds.
+
+## Swarm wallets
+
+Boost wallets are derived deterministically from one 32-byte secret:
+
+```
+SWARM_SEED=<base64 of 32 random bytes>
+```
+
+Wallet *i* = `Keypair.fromSeed(sha256(seed || u32le(i)))`, 1000 wallets.
+They start empty — each burst call tops up its batch from the treasury out
+of the customer's deposit (treasury pays buys + gas and keeps the 25%
+margin by construction). No pre-funding, no env-size problem.
+
+## AI launch tiers
 
 | Tier | Price | Contents |
 | --- | --- | --- |
@@ -56,9 +75,8 @@ GH_TOKEN=...                       # optional: launches feed via GitHub contents
 GH_REPO=owner/name
 ```
 
-`SWARM_WALLETS` is a JSON array of base64-encoded 64-byte keypair secrets.
-Each wallet needs at least 0.004 SOL to pay for one buy plus fees and rent.
-Refill them from the treasury when they run dry. See `scripts/` for helpers.
+`SWARM_WALLETS` / `SWARM_WALLETS_N` (JSON arrays of base64 secrets) are
+still read as a fallback when `SWARM_SEED` is absent.
 
 ## Tests
 

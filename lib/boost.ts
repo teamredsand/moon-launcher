@@ -13,6 +13,8 @@ import {
   Connection,
   Keypair,
   PublicKey,
+  SystemProgram,
+  Transaction,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
@@ -20,11 +22,11 @@ import {
 import { buyerAtaCreateIx, nativeBuyIx, quoteCp } from "./pump";
 import { findAta } from "./pdas";
 import { PUMP_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "./constants";
-import { swarmWallets } from "./rpc";
+import { swarmWallets, treasury } from "./rpc";
 
-export const BUY_LAMPORTS = 500_000n; // 0.0005 SOL per swarm buy
+export const BUY_LAMPORTS = 500_000n; // default per-buy (AI-tier boost)
 export const BURST_SIZE = 6;
-const SWARM_MIN_BALANCE_LAMPORTS = 4_000_000n; // buy + rents + fees
+const SWARM_MIN_BALANCE_BUFFER = 200_000n; // tx fees headroom per buy
 
 export function curveForMint(mint: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
@@ -101,7 +103,8 @@ export async function progress(
   return { done, target, remaining: Math.max(target - done, 0) };
 }
 
-/** Eligible = funded enough for a self-paid buy and not yet bought. */
+/** Eligible = not yet bought this mint. Underfunded wallets are topped up
+ * from the treasury in the burst's funding step. */
 async function pickBuyers(
   conn: Connection,
   mint: PublicKey,
@@ -114,25 +117,60 @@ async function pickBuyers(
   for (const w of wallets) {
     if (out.length >= n) break;
     if (used.has(w.pubkey)) continue;
-    const bal = await conn.getBalance(w.kp.publicKey);
-    if (bal < SWARM_MIN_BALANCE_LAMPORTS) continue;
     out.push(w.kp);
   }
   return out;
 }
 
-/** One burst of up to BURST_SIZE buys; returns wallets newly landed. */
+/** One treasury-signed tx that tops up every wallet in the batch so each
+ * holds `target` lamports. The deposit pays for this; the 25% margin stays
+ * in the treasury because only the remainder is distributed. */
+async function fundBatch(
+  conn: Connection,
+  wallets: Keypair[],
+  target: bigint
+): Promise<void> {
+  const t = treasury();
+  if (!t) throw new Error("treasury not configured");
+  const ixs: TransactionInstruction[] = [];
+  const { blockhash } = await conn.getLatestBlockhash();
+  for (const kp of wallets) {
+    const bal = await conn.getBalance(kp.publicKey);
+    if (bal >= target) continue;
+    ixs.push(
+      SystemProgram.transfer({
+        fromPubkey: t.publicKey,
+        toPubkey: kp.publicKey,
+        lamports: Number(target - BigInt(bal)),
+      })
+    );
+  }
+  if (ixs.length === 0) return;
+  const tx = new Transaction();
+  tx.add(...ixs);
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = t.publicKey;
+  tx.sign(t);
+  const sig = await conn.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
+  await conn.confirmTransaction(sig, "confirmed");
+}
+
+/** One burst of up to BURST_SIZE buys; returns wallets newly landed. Funds
+ * the batch from the treasury first when needed. */
 export async function fireBurst(
   conn: Connection,
   mint: PublicKey,
   customer: PublicKey,
-  limit?: number
+  limit?: number,
+  perBuyLamports?: bigint
 ): Promise<number> {
+  const buyLamports = perBuyLamports ?? BUY_LAMPORTS;
   const pool = await pickBuyers(conn, mint, BURST_SIZE, limit);
   if (pool.length === 0) return 0;
+  await fundBatch(conn, pool, buyLamports + SWARM_MIN_BALANCE_BUFFER);
   const state = await curveState(conn, curveForMint(mint));
   if (!state) throw new Error("curve unreadable — coin not launched?");
-  const estOut = quoteCp(state.vSol, state.vTok, BUY_LAMPORTS, 100);
+  const estOut = quoteCp(state.vSol, state.vTok, buyLamports, 100);
   const minOut = (estOut * 9500n) / 10_000n;
   const { blockhash } = await conn.getLatestBlockhash();
 
@@ -141,7 +179,7 @@ export async function fireBurst(
       const buyer = kp.publicKey;
       const ixs: TransactionInstruction[] = [
         buyerAtaCreateIx(buyer, buyer, mint),
-        nativeBuyIx({ mint, buyer, creator: customer, solIn: BUY_LAMPORTS, minOut }),
+        nativeBuyIx({ mint, buyer, creator: customer, solIn: buyLamports, minOut }),
       ];
       const msg = new TransactionMessage({
         payerKey: buyer,
@@ -163,17 +201,20 @@ export async function fireBurst(
   return landed.reduce((a, b) => a + b, 0);
 }
 
-/** Transfer every swarm-held balance of this mint to the customer and close
- * the ATAs (rent recovered). Idempotent; called at boost completion. */
-export async function consolidate(
+/** Consolidate a chunk of swarm balances to the customer (ATAs closed, rent
+ * recovered). Called repeatedly at boost completion until it returns 0. */
+export async function consolidateChunk(
   conn: Connection,
   mint: PublicKey,
-  customer: PublicKey
+  customer: PublicKey,
+  limit?: number,
+  chunk = 15
 ): Promise<number> {
-  const wallets = swarmWallets();
+  const wallets = subset(limit);
   const { blockhash } = await conn.getLatestBlockhash();
   let moved = 0;
   for (const w of wallets) {
+    if (moved >= chunk) break;
     const ata = findAta(w.kp.publicKey, mint);
     const info = await conn.getParsedAccountInfo(ata);
     const amountRaw =

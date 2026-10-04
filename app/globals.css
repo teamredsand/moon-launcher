@@ -30,7 +30,8 @@
 
 @theme inline {
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), monospace;
+  --font-heading: var(--font-allan), var(--font-geist-sans), sans-serif;
+  --font-mono: "Google Sans Code", var(--font-geist-mono), monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -67,6 +68,37 @@
   html {
     @apply font-sans;
     color-scheme: dark;
+  }
+  h1,
+  h2 {
+    font-family: var(--font-allan), var(--font-geist-sans), sans-serif;
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: "Google Sans Code", var(--font-geist-mono), monospace;
+  }
+}
+
+@keyframes float-down {
+  from {
+    transform: translateY(-15vh);
+  }
+  to {
+    transform: translateY(115vh);
+  }
+}
+
+@layer components {
+  .space-particle {
+    top: 0;
+    animation-name: float-down;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    will-change: transform;
   }
 }
 

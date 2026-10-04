@@ -11,23 +11,60 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { TIERS } from "@/lib/pricing";
+import { CUSTOM_FEE_SOL, TIERS } from "@/lib/pricing";
 import { listLaunches } from "@/lib/launches";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://moonlauncher.app";
 
+const services = [
+  {
+    slug: "/launch/custom",
+    name: "Custom launch",
+    price: "0.15 SOL",
+    priceNote: "flat fee",
+    points: [
+      "You write the name, the symbol, and the text.",
+      "You upload the image.",
+      "One signature. The coin is live.",
+    ],
+  },
+  {
+    slug: "/launch/boost",
+    name: "Swarm buy",
+    price: "25% of deposit",
+    priceNote: "margin on the amount",
+    points: [
+      "Pick any coin on pump.fun.",
+      "Up to 1000 wallets buy it.",
+      "All tokens go to your wallet.",
+    ],
+  },
+  {
+    slug: "/launch/ai",
+    name: "AI launch",
+    price: "from 0.25 SOL",
+    priceNote: "AI makes everything",
+    badge: "Most used",
+    points: [
+      "AI makes the name, the symbol, the text, and the image.",
+      "One launch transaction.",
+      "Optional boost with 100 or 250 wallets.",
+    ],
+  },
+];
+
 const steps = [
   {
-    title: "Write a theme",
-    body: "Type a theme. For example: 'a bee swarm that rules the internet'. The service makes the name, the symbol, the text, and the image.",
+    title: "Pick a service",
+    body: "Use AI for everything. Or write your own name, text, and image. Or boost a coin that already exists.",
   },
   {
     title: "Sign one transaction",
     body: "Connect your wallet. Sign one transaction. This transaction creates the coin. It also buys the first tokens for your wallet.",
   },
   {
-    title: "Add a boost (optional)",
-    body: "Pay for a boost. Up to 100 wallets buy your coin. Then all tokens move to your wallet. You control the supply.",
+    title: "Add more buyers (optional)",
+    body: "Pay for a boost. Up to 1000 wallets buy your coin. Then all tokens move to your wallet. You control the supply.",
   },
 ];
 
@@ -69,12 +106,15 @@ export default async function Home() {
     operatingSystem: "Web",
     description:
       "MoonLauncher makes coins on pump.fun. The service makes the name, the symbol, the text, and the image.",
-    offers: Object.values(TIERS).map((t) => ({
-      "@type": "Offer",
-      name: t.id,
-      price: String(t.feeSol),
-      priceCurrency: "SOL",
-    })),
+    offers: [
+      { "@type": "Offer", name: "custom launch", price: String(CUSTOM_FEE_SOL), priceCurrency: "SOL" },
+      ...Object.values(TIERS).map((t) => ({
+        "@type": "Offer",
+        name: t.id,
+        price: String(t.feeSol),
+        priceCurrency: "SOL",
+      })),
+    ],
   };
 
   return (
@@ -97,7 +137,7 @@ export default async function Home() {
         <div className="flex gap-3">
           <Link
             href="/launch"
-            className={buttonVariants({ size: "lg" })}
+            className={buttonVariants({ size: "lg", variant: "outline" })}
           >
             Launch a coin
           </Link>
@@ -139,57 +179,37 @@ export default async function Home() {
         </ol>
       </section>
 
-      {/* Pricing */}
-      <section id="pricing" className="scroll-mt-20 py-16">
-        <h2 className="mb-8 text-2xl font-semibold tracking-tight">Pricing</h2>
+      {/* Services */}
+      <section id="services" className="scroll-mt-20 py-16">
+        <h2 className="mb-8 text-2xl font-semibold tracking-tight">Services</h2>
         <div className="grid gap-4 sm:grid-cols-3">
-          {Object.values(TIERS).map((t) => (
+          {services.map((s) => (
             <Card
-              key={t.id}
-              className={
-                "flex h-full flex-col" +
-                (t.id === "boost" ? " border-primary" : "")
-              }
+              key={s.slug}
+              className="flex h-full flex-col"
             >
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="capitalize">{t.id}</CardTitle>
-                  {t.id === "boost" && <Badge>Most used</Badge>}
+                  <CardTitle>{s.name}</CardTitle>
+                  {s.badge && <Badge>{s.badge}</Badge>}
                 </div>
-                <p className="text-3xl font-bold">
-                  {t.feeSol} <span className="text-base font-normal">SOL</span>
-                </p>
+                <p className="text-3xl font-bold">{s.price}</p>
+                <p className="text-sm text-muted-foreground">{s.priceNote}</p>
               </CardHeader>
               <CardContent className="flex-1">
                 <CardDescription className="space-y-1">
-                  <p>AI makes the coin identity.</p>
-                  <p>One launch transaction.</p>
-                  <p>First buy of {t.firstBuySol} SOL.</p>
-                  {t.wallets > 0 && (
-                    <p>
-                      {t.wallets} wallets buy your coin in small steps.
-                    </p>
-                  )}
-                  {t.wallets > 0 && <p>All tokens move to your wallet.</p>}
-                  {t.featured && <p>Your coin shows first in the feed below.</p>}
+                  {s.points.map((p) => (
+                    <p key={p}>{p}</p>
+                  ))}
                 </CardDescription>
               </CardContent>
               <CardFooter>
-                {t.id === "boost" ? (
-                  <Link
-                    href={`/launch?tier=${t.id}`}
-                    className={buttonVariants({ className: "w-full" })}
-                  >
-                    Choose {t.id}
-                  </Link>
-                ) : (
-                  <Link
-                    href={`/launch?tier=${t.id}`}
-                    className={buttonVariants({ variant: "outline", className: "w-full" })}
-                  >
-                    Choose {t.id}
-                  </Link>
-                )}
+                <Link
+                  href={s.slug}
+                  className={buttonVariants({ variant: "outline", className: "w-full" })}
+                >
+                  Open {s.name}
+                </Link>
               </CardFooter>
             </Card>
           ))}

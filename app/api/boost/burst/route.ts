@@ -1,22 +1,25 @@
 import { NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
-import { consolidate, fireBurst, progress } from "@/lib/boost";
-import { tier } from "@/lib/pricing";
+import { consolidateChunk, fireBurst, progress } from "@/lib/boost";
+import { tier, swarmQuote } from "@/lib/pricing";
 import { connection, treasuryPubkey } from "@/lib/rpc";
 
 export const maxDuration = 60;
 
-const VERIFIED = new Set<string>();
+/** Verified payments: key -> per-buy lamports (swarm mode) or 0n (tier boost). */
+const VERIFIED = new Map<string, bigint>();
 
-/** One boost burst. The browser calls this every ~20s until done.
- * Body: { mint, customer, tier, paymentSig }. */
+interface BurstBody {
+  mint?: string;
+  customer?: string;
+  tier?: string; // "boost" | "moonshot" (AI add-on) or "swarm" (standalone)
+  paymentSig?: string;
+  buys?: number; // swarm mode: total buy count
+}
+
+/** One boost burst. The browser calls this every ~20s until done. */
 export async function POST(req: Request) {
-  let body: {
-    mint?: string;
-    customer?: string;
-    tier?: string;
-    paymentSig?: string;
-  };
+  let body: BurstBody;
   try {
     body = await req.json();
   } catch {
@@ -26,10 +29,13 @@ export async function POST(req: Request) {
   if (!mint || !customer) {
     return NextResponse.json({ error: "mint/customer missing" }, { status: 400 });
   }
+  const isSwarm = body.tier === "swarm";
   const t = tier(body.tier ?? "boost");
-  if (t.wallets === 0) {
+  const buys = Math.max(1, Math.min(1000, Math.floor(body.buys ?? t.wallets)));
+  if (!isSwarm && t.wallets === 0) {
     return NextResponse.json({ error: "tier has no boost" }, { status: 400 });
   }
+  const target = isSwarm ? buys : t.wallets;
 
   const conn = connection();
   const treasury = treasuryPubkey();
@@ -45,11 +51,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad keys" }, { status: 400 });
   }
 
-  // verify the boost payment once (System transfer customer -> treasury)
-  if (!VERIFIED.has(`${mint}:${body.paymentSig}`)) {
+  // verify the payment once; derive per-buy lamports from the ACTUAL
+  // transferred amount (never trust the client)
+  const vKey = `${mint}:${body.paymentSig}`;
+  if (!VERIFIED.has(vKey)) {
     if (!body.paymentSig) {
       return NextResponse.json(
-        { error: "paymentSig missing — pay the boost first" },
+        { error: "paymentSig missing — pay first" },
         { status: 402 }
       );
     }
@@ -57,49 +65,95 @@ export async function POST(req: Request) {
       commitment: "confirmed",
       maxSupportedTransactionVersion: 0,
     });
-    const need = BigInt(Math.round(t.boostFeeSol * 1e9));
-    let ok = false;
-    if (pay && !pay.meta?.err) {
-      const keyStr = pay.transaction.message.getAccountKeys({
-        accountKeysFromLookups: pay.meta?.loadedAddresses,
-      });
-      // direct (compiled) transfer from the payer
-      pay.transaction.message.compiledInstructions.forEach((ci) => {
-        if (ok) return;
-        const prog = keyStr.get(ci.programIdIndex);
-        if (prog?.toBase58() !== "11111111111111111111111111111111") return;
-        const d = Buffer.from(ci.data as Uint8Array);
-        if (d.length !== 12 || d.readUInt32LE(0) !== 2) return;
-        if (ci.accountKeyIndexes.length !== 2) return;
-        const from = keyStr.get(ci.accountKeyIndexes[0]);
-        const to = keyStr.get(ci.accountKeyIndexes[1]);
-        if (!from?.equals(customerKey) || !to?.equals(treasury)) return;
-        if (d.readBigUInt64LE(4) >= need) ok = true;
-      });
+    if (!pay || pay.meta?.err) {
+      return NextResponse.json({ error: "payment not found" }, { status: 402 });
     }
-    if (!ok) {
+    const keyStr = pay.transaction.message.getAccountKeys({
+      accountKeysFromLookups: pay.meta?.loadedAddresses,
+    });
+    let received = 0n;
+    pay.transaction.message.compiledInstructions.forEach((ci) => {
+      const prog = keyStr.get(ci.programIdIndex);
+      if (prog?.toBase58() !== "11111111111111111111111111111111") return;
+      const d = Buffer.from(ci.data as Uint8Array);
+      if (d.length !== 12 || d.readUInt32LE(0) !== 2) return;
+      if (ci.accountKeyIndexes.length !== 2) return;
+      const from = keyStr.get(ci.accountKeyIndexes[0]);
+      const to = keyStr.get(ci.accountKeyIndexes[1]);
+      if (!from?.equals(customerKey) || !to?.equals(treasury)) return;
+      received += d.readBigUInt64LE(4);
+    });
+    if (received === 0n) {
       return NextResponse.json(
-        { error: "payment not found or too small" },
+        { error: "payment does not match customer/treasury" },
         { status: 402 }
       );
     }
-    VERIFIED.add(`${mint}:${body.paymentSig}`);
+    let perBuy: bigint;
+    if (isSwarm) {
+      const q = swarmQuote(Number(received) / 1e9, target);
+      if (!q.valid) {
+        return NextResponse.json({ error: q.reason }, { status: 402 });
+      }
+      perBuy = BigInt(Math.floor(q.perBuySol * 1e9));
+    } else {
+      const need = BigInt(Math.round(t.boostFeeSol * 1e9));
+      if (received < need) {
+        return NextResponse.json(
+          { error: "payment too small" },
+          { status: 402 }
+        );
+      }
+      perBuy = 0n; // default burst amount
+    }
+    VERIFIED.set(vKey, perBuy);
   }
 
-  // fire one burst; if finished, consolidate to the customer
-  const pg = await progress(conn, mintKey, t.wallets);
-  let finalized = false;
+  const perBuy = VERIFIED.get(vKey);
+  const pg = await progress(conn, mintKey, target);
+  let phase: "buying" | "consolidating" | "done" = "buying";
+  let consolidated = 0;
   if (pg.remaining > 0) {
-    await fireBurst(conn, mintKey, customerKey, t.wallets);
+    await fireBurst(
+      conn,
+      mintKey,
+      customerKey,
+      target,
+      isSwarm ? perBuy : undefined
+    );
   } else {
-    await consolidate(conn, mintKey, customerKey);
-    finalized = true;
+    phase = "consolidating";
+    consolidated = await consolidateChunk(conn, mintKey, customerKey, target);
+    const after = await progress(conn, mintKey, target);
+    // consolidation done when no target wallet still holds an ATA with balance
+    phase = consolidated === 0 ? "done" : "consolidating";
+    return NextResponse.json({
+      done: after.target,
+      target: after.target,
+      remaining: 0,
+      phase,
+    });
   }
-  const after = await progress(conn, mintKey, t.wallets);
+  const after = await progress(conn, mintKey, target);
   return NextResponse.json({
-    done: finalized ? after.target : after.done,
+    done: after.done,
     target: after.target,
-    remaining: finalized ? 0 : after.remaining,
-    finalized,
+    remaining: after.remaining,
+    phase,
   });
+}
+
+/** Progress read without firing (poll while the user watches). */
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const mint = searchParams.get("mint");
+  const buys = Number(searchParams.get("buys") ?? "0");
+  if (!mint) return NextResponse.json({ error: "mint missing" }, { status: 400 });
+  try {
+    const conn = connection();
+    const pg = await progress(conn, new PublicKey(mint), buys || undefined);
+    return NextResponse.json(pg);
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+  }
 }

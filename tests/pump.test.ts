@@ -24,7 +24,7 @@ import {
   quoteCp,
 } from "../lib/pump";
 import { anchorSeedPairs } from "../lib/sim";
-import { TIERS, tier } from "../lib/pricing";
+import { SWARM_GAS_PER_BUY, SWARM_MARGIN, TIERS, swarmQuote, tier } from "../lib/pricing";
 
 // ---- ground truth from live mainnet launches (2026-10-04) -------------------
 const BEEZ_MINT = new PublicKey("4g9zm9i8T27tmSTZDo2dQDEN3yuREByJrfpFrtEaJWqh");
@@ -204,5 +204,49 @@ describe("pricing", () => {
     const t = TIERS.moonshot;
     expect(t.feeSol + t.firstBuySol).toBeLessThan(2); // fee sanity
     expect(TIERS.boost.boostFeeSol).toBe(TIERS.boost.feeSol - TIERS.ignition.feeSol);
+  });
+});
+
+describe("swarm quote", () => {
+  it("25% margin, gas, and per-buy math", () => {
+    const q = swarmQuote(2, 100);
+    expect(q.feeSol).toBeCloseTo(0.5);
+    expect(q.gasSol).toBeCloseTo(100 * SWARM_GAS_PER_BUY);
+    expect(q.perBuySol).toBeCloseTo((2 - 0.5 - q.gasSol) / 100, 8);
+    expect(q.valid).toBe(true);
+  });
+  it("rejects deposits too small for the buy count", () => {
+    const q = swarmQuote(0.5, 500);
+    expect(q.valid).toBe(false);
+    expect(q.reason).toMatch(/at least/);
+  });
+  it("rejects out-of-range inputs", () => {
+    expect(swarmQuote(2, 5).valid).toBe(false);
+    expect(swarmQuote(2, 1001).valid).toBe(false);
+    expect(swarmQuote(60, 100).valid).toBe(false);
+  });
+  it("margin constant is 25%", () => {
+    expect(SWARM_MARGIN).toBe(0.25);
+  });
+});
+
+describe("swarm derivation", () => {
+  it("derives 1000 distinct wallets deterministically from a seed", async () => {
+    process.env.SWARM_SEED = Buffer.alloc(32, 7).toString("base64");
+    const mod = await import("../lib/rpc");
+    const w1 = mod.swarmWallets();
+    expect(w1.length).toBe(1000);
+    const pubs = new Set(w1.map((w) => w.pubkey));
+    expect(pubs.size).toBe(1000);
+    // determinism: re-derive manually
+    const { createHash } = await import("crypto");
+    const { Keypair } = await import("@solana/web3.js");
+    const seed = Buffer.alloc(32, 7);
+    const h = createHash("sha256")
+      .update(seed)
+      .update(Buffer.from([5, 0, 0, 0]))
+      .digest();
+    expect(Keypair.fromSeed(h).publicKey.toBase58()).toBe(w1[5].pubkey);
+    delete process.env.SWARM_SEED;
   });
 });

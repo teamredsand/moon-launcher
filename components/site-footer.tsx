@@ -10,7 +10,7 @@ export function SiteFooter() {
           MoonLauncher. Launch coins on pump.fun.
         </p>
         <nav aria-label="Footer" className="flex gap-4">
-          <Link href="/#pricing" className="hover:text-foreground">
+          <Link href="/#services" className="hover:text-foreground">
             Pricing
           </Link>
           <Link href="/#faq" className="hover:text-foreground">
