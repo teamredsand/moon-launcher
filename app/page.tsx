@@ -131,8 +131,7 @@ export default async function Home() {
           Launch, boost &amp; swarm tokens on pump.fun
         </h1>
         <p className="max-w-xl text-muted-foreground text-balance">
-          AI makes the identity, or you write it. Up to 1000 wallets buy. Your
-          wallet keeps the tokens.
+          Launch with up to 1000 wallets boosting your token to the moon
         </p>
         <p className="text-sm text-muted-foreground">
           Pick a service below. No key sharing. Your wallet keeps the tokens.

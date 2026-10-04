@@ -69,8 +69,11 @@ export async function generateIdentity(theme: string): Promise<CoinIdentity> {
   return sanitizeIdentity(JSON.parse(m[0]) as Partial<CoinIdentity>);
 }
 
-/** Render the image; returns the raw JPEG bytes (OSS URLs expire in ~24h). */
-export async function generateImage(prompt: string): Promise<Buffer> {
+/** Render the image; returns the raw JPEG bytes plus the source URL (valid
+ * ~24h — good for instant previews, while the IPFS URI is what launches). */
+export async function generateImage(
+  prompt: string
+): Promise<{ bytes: Buffer; url: string }> {
   const resp = (await minimaxPost(
     "/image_generation",
     {
@@ -94,5 +97,5 @@ export async function generateImage(prompt: string): Promise<Buffer> {
   if (buf.length < 1000 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) {
     throw new Error(`suspicious image (${buf.length} bytes)`);
   }
-  return buf;
+  return { bytes: buf, url };
 }

@@ -13,6 +13,6 @@ export default function AiLaunchPage({
 }: {
   searchParams: { tier?: string };
 }) {
-  const t = tier(searchParams.tier ?? "boost");
+  const t = tier(searchParams.tier ?? "moonshot");
   return <LaunchFlow initialTier={t.id} />;
 }

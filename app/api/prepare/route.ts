@@ -70,8 +70,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "theme missing" }, { status: 400 });
       }
       identity = await generateIdentity(body.theme.slice(0, 200));
-      const image = await generateImage(identity.image_prompt);
-      const up = await uploadToIpfs(image, identity);
+      const { bytes } = await generateImage(identity.image_prompt);
+      const up = await uploadToIpfs(bytes, identity);
       metadataUri = up.metadataUri;
       imageUri = up.imageUri;
     }

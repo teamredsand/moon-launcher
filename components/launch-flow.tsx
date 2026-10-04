@@ -43,6 +43,7 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
   const [tierId, setTierId] = useState<TierId>(initialTier);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -68,6 +69,7 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
       if (!res.ok) throw new Error(json.error ?? "identity failed");
       setIdentity(json.identity);
       setImageUri(json.imageUri);
+      setPreviewUri(json.previewUri ?? null);
       setMetadataUri(json.metadataUri);
       setPhase("identity");
     } catch (e) {
@@ -223,8 +225,8 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
         </Card>
       )}
 
-      {/* Step 1: theme + tier */}
-      {(phase === "theme" || phase === "identity") && (
+      {/* Step 1: theme + tier — hidden once the identity exists */}
+      {phase === "theme" && (
         <Card>
           <CardHeader>
             <CardTitle>Step 1 — Write a theme</CardTitle>
@@ -262,69 +264,89 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
                     <span className="block text-muted-foreground">
                       {x.feeSol} SOL
                     </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {x.wallets > 0
+                        ? `${x.wallets} wallets buy from launch`
+                        : "no swarm buys"}
+                    </span>
                   </button>
                 ))}
               </div>
               <p className="text-sm text-muted-foreground">
                 {t.wallets > 0
-                  ? `${t.wallets} wallets buy your coin. All tokens go to your wallet.`
+                  ? `${t.wallets} wallets buy your coin from launch. All tokens go to your wallet.`
                   : "No boost. The coin starts with your first buy."}
               </p>
             </div>
-            {identity && imageUri && (
-              <div className="flex gap-4">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={imageUri}
-                  alt={`Image of the coin ${identity.name}`}
-                  className="size-24 rounded-md object-cover"
-                />
-                <div className="space-y-1 text-sm">
-                  <p className="font-medium">
-                    {identity.name}{" "}
-                    <Badge variant="secondary">{identity.symbol}</Badge>
-                  </p>
-                  <p className="text-muted-foreground">{identity.description}</p>
-                </div>
-              </div>
-            )}
           </CardContent>
-          <CardFooter className="gap-2">
+          <CardFooter>
             <Button onClick={makeIdentity} disabled={busy || theme.length < 3}>
-              {identity ? "Make a new identity" : "Make the identity"}
+              {busy ? "Working…" : "Make the identity"}
             </Button>
-            {identity && phase === "identity" && (
-              <Button variant="outline" onClick={() => setPhase("identity")} disabled>
-                Keep this identity
-              </Button>
-            )}
           </CardFooter>
         </Card>
       )}
 
-      {/* Step 2: sign */}
+      {/* working-through-state indicator while the AI runs */}
+      {busy && phase === "theme" && (
+        <Card>
+          <CardContent className="flex items-center gap-3 pt-6 text-sm">
+            <span className="inline-block size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            Making the identity. The AI writes the coin and draws the image.
+            This takes 10–40 seconds. Wait.
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Step 2: preview + the only CTA — Launch */}
       {phase === "identity" && identity && (
         <Card>
           <CardHeader>
-            <CardTitle>Step 2 — Sign the launch</CardTitle>
+            <CardTitle>Step 2 — Launch</CardTitle>
             <CardDescription>
-              Connect your wallet. Sign one transaction. It creates the coin
-              and buys the first tokens. It also pays the service fee.
+              This is your coin. Sign one transaction. It creates the coin and
+              buys the first tokens. It also pays the service fee.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>
+          <CardContent className="space-y-4">
+            <div className="flex gap-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewUri ?? imageUri ?? ""}
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (imageUri && el.src !== imageUri) el.src = imageUri;
+                }}
+                alt={`Image of the coin ${identity.name}`}
+                className="size-24 rounded-md object-cover"
+              />
+              <div className="space-y-1 text-sm">
+                <p className="font-medium">
+                  {identity.name}{" "}
+                  <Badge variant="secondary">{identity.symbol}</Badge>
+                </p>
+                <p className="text-muted-foreground">{identity.description}</p>
+                <p className="text-muted-foreground">
+                  {t.wallets > 0
+                    ? `${t.wallets} wallets buy from launch. All tokens go to your wallet.`
+                    : "No swarm buys."}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
               Your wallet pays {t.firstBuySol} SOL for the first buy and{" "}
               {t.feeSol} SOL total for the service.
             </p>
-            {!connected && <p>Connect your wallet to continue.</p>}
+            {!connected && (
+              <p className="text-sm">Connect your wallet to continue.</p>
+            )}
           </CardContent>
           <CardFooter>
             <Button
               onClick={signAndSend}
               disabled={busy || !connected || !publicKey}
             >
-              {busy ? "Working…" : "Sign and launch"}
+              {busy ? "Working…" : "Launch"}
             </Button>
           </CardFooter>
         </Card>
@@ -332,7 +354,8 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
 
       {(phase === "signing" || phase === "confirming") && (
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="flex items-center gap-3 pt-6">
+            <span className="inline-block size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             {phase === "signing"
               ? "Sign the transaction in your wallet…"
               : "The transaction is on the chain. Wait…"}

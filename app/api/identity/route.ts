@@ -37,9 +37,9 @@ export async function POST(req: Request) {
   }
   try {
     const identity = await generateIdentity(theme);
-    const image = await generateImage(identity.image_prompt);
-    const { imageUri, metadataUri } = await uploadToIpfs(image, identity);
-    return NextResponse.json({ identity, imageUri, metadataUri });
+    const { bytes, url } = await generateImage(identity.image_prompt);
+    const { imageUri, metadataUri } = await uploadToIpfs(bytes, identity);
+    return NextResponse.json({ identity, imageUri, metadataUri, previewUri: url });
   } catch (e) {
     return NextResponse.json(
       { error: `identity generation failed: ${(e as Error).message}` },
