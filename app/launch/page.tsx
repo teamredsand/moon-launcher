@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CUSTOM_FEE_SOL, SWARM_MARGIN, SWARM_MAX_BUYS, TIERS } from "@/lib/pricing";
+import { CUSTOM_FEE_SOL, SWARM_MAX_BUYS, TIERS } from "@/lib/pricing";
 
 export const metadata: Metadata = {
   title: "Services",
@@ -34,8 +34,8 @@ const services = [
   {
     slug: "/launch/boost",
     name: "Swarm buy",
-    price: `${SWARM_MARGIN * 100}% of deposit`,
-    priceNote: "margin on the amount",
+    price: "Pick your price & volume",
+    priceNote: `up to ${SWARM_MAX_BUYS} buys`,
     points: [
       `Pick any coin on pump.fun.`,
       `Up to ${SWARM_MAX_BUYS} wallets buy it.`,

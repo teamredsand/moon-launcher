@@ -31,8 +31,8 @@ const services = [
   {
     slug: "/launch/boost",
     name: "Swarm buy",
-    price: "25% of deposit",
-    priceNote: "margin on the amount",
+    price: "Pick your price & volume",
+    priceNote: "up to 1000 buys",
     points: [
       "Pick any coin on pump.fun.",
       "Up to 1000 wallets buy it.",
