@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -17,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { BoostStep } from "@/components/boost-step";
+import { trackEvent } from "@/lib/gtag";
 import { CUSTOM_FEE_SOL, TIERS } from "@/lib/pricing";
 
 interface Identity {
@@ -37,6 +38,7 @@ export function CustomFlow() {
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [description, setDescription] = useState("");
+  const [firstBuy, setFirstBuy] = useState<number>(FIRST_BUY_SOL);
   const [website, setWebsite] = useState("");
   const [twitter, setTwitter] = useState("");
   const [telegram, setTelegram] = useState("");
@@ -87,7 +89,7 @@ export function CustomFlow() {
     setError(null);
     setBusy(true);
     try {
-      const needs = FIRST_BUY_SOL + CUSTOM_FEE_SOL + 0.01;
+      const needs = firstBuy + CUSTOM_FEE_SOL + 0.01;
       const bal = await connection.getBalance(publicKey);
       if (bal < needs * LAMPORTS_PER_SOL) {
         throw new Error(
@@ -109,6 +111,7 @@ export function CustomFlow() {
           imageUri,
           tier: "ignition",
           customer: publicKey.toBase58(),
+          firstBuySol: firstBuy,
         }),
       });
       const pj = await prep.json();
@@ -135,6 +138,7 @@ export function CustomFlow() {
         body: JSON.stringify({
           sig,
           mint: pj.mint,
+          mode: "custom",
           tier: "ignition",
           identity,
           imageUri,
@@ -151,7 +155,7 @@ export function CustomFlow() {
     } finally {
       setBusy(false);
     }
-  }, [publicKey, signTransaction, metadataUri, imageUri, name, symbol, description, connection]);
+  }, [publicKey, signTransaction, metadataUri, imageUri, name, symbol, description, firstBuy, connection]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
@@ -262,6 +266,25 @@ export function CustomFlow() {
                 }}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="firstBuy">First buy (SOL)</Label>
+              <Input
+                id="firstBuy"
+                type="number"
+                min={0}
+                max={10}
+                step={0.01}
+                value={firstBuy}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v) && v >= 0 && v <= 10) setFirstBuy(v);
+                }}
+              />
+              <p className="text-sm text-muted-foreground">
+                Your wallet buys this amount in the launch transaction. Like
+                the first buy on pump.fun.
+              </p>
+            </div>
             {imageUri && (
               <div className="flex gap-4">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -280,7 +303,7 @@ export function CustomFlow() {
             )}
           </CardContent>
           <CardFooter className="gap-2">
-            <Button onClick={upload} disabled={busy || !formOk}>
+            <Button onClick={() => { trackEvent("custom_upload"); upload(); }} disabled={busy || !formOk}>
               {busy && phase === "form" ? "Uploading…" : "Check and upload"}
             </Button>
           </CardFooter>
@@ -298,13 +321,13 @@ export function CustomFlow() {
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
             <p>
-              Your wallet pays {FIRST_BUY_SOL} SOL for the first buy and{" "}
+              Your wallet pays {firstBuy} SOL for the first buy and{" "}
               {CUSTOM_FEE_SOL} SOL for the service.
             </p>
           </CardContent>
           <CardFooter>
             <Button
-              onClick={signAndSend}
+              onClick={() => { trackEvent("custom_launch_click", { firstBuy }); signAndSend(); }}
               disabled={busy || !connected || !publicKey}
             >
               {busy ? "Working…" : "Sign and launch"}
@@ -342,17 +365,11 @@ export function CustomFlow() {
             <p>
               The first tokens are in your wallet. You own the coin.
             </p>
-            {mint && (
-              <Link
-                href={`/launch/boost?mint=${mint}`}
-                className={buttonVariants({ variant: "outline", className: "w-full" })}
-              >
-                Boost this coin now
-              </Link>
-            )}
           </CardContent>
         </Card>
       )}
+
+      {phase === "done" && mint && <BoostStep mint={mint} />}
     </div>
   );
 }

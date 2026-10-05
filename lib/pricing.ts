@@ -20,6 +20,9 @@ export interface Tier {
 }
 
 export const IGNITION_FEE_SOL = 0.25;
+/** User-settable first buy bounds (like pump.fun's own form). */
+export const FIRST_BUY_MIN_SOL = 0;
+export const FIRST_BUY_MAX_SOL = 10;
 /** Flat fee for a user-described launch (no AI cost). */
 export const CUSTOM_FEE_SOL = 0.15;
 

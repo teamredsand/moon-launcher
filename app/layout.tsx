@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SpaceBg } from "@/components/space-bg";
 import { AppWalletProvider } from "@/components/wallet-provider";
+import { Gtag } from "@/components/gtag";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -78,6 +79,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen flex flex-col`}
       >
         <SpaceBg />
+        <Gtag />
         <AppWalletProvider>
           <div className="relative z-10 flex min-h-screen flex-1 flex-col">
             <SiteHeader />

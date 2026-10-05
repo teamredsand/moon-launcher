@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { trackEvent } from "@/lib/gtag";
 import {
   SWARM_GAS_PER_BUY,
   SWARM_MAX_BUYS,
@@ -83,13 +84,35 @@ export function SwarmFlow() {
           `Your wallet needs ${(q.depositSol + 0.005).toFixed(2)} SOL. It has ${(bal / LAMPORTS_PER_SOL).toFixed(3)} SOL.`
         );
       }
+      // create the server-side job first — its memo binds the payment
+      const jr = await fetch("/api/boost/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mint,
+          customer: publicKey.toBase58(),
+          perBuy,
+          buys,
+        }),
+      });
+      const job = await jr.json();
+      if (!jr.ok) throw new Error(job.error ?? "could not create the job");
+
       setPhase("depositing");
+      const MEMO_PROGRAM = new PublicKey(
+        "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      );
       const tx = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(treasury),
-          lamports: Math.round(q.depositSol * LAMPORTS_PER_SOL),
-        })
+          lamports: Number(job.deposit.lamports),
+        }),
+        {
+          programId: MEMO_PROGRAM,
+          keys: [],
+          data: Buffer.from(job.memo, "utf8"),
+        }
       );
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
       tx.recentBlockhash = blockhash;
@@ -102,31 +125,27 @@ export function SwarmFlow() {
       );
 
       setPhase("buying");
-      const callBurst = async () => {
-        const res = await fetch("/api/boost/burst", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            mint,
-            customer: publicKey.toBase58(),
-            tier: "swarm",
-            buys,
-            perBuy,
-            paymentSig,
-          }),
-        });
+      // watch-mode: poke the job forward every 20s, read progress from it.
+      // the cron tick keeps it moving even if this page closes.
+      const poll = async () => {
+        const res = await fetch(`/api/boost/jobs/${job.id}/advance`, { method: "POST" });
         const j = await res.json();
-        if (!res.ok) throw new Error(j.error ?? "boost failed");
+        if (!res.ok) return;
         setProgress({ done: j.done, target: j.target });
-        if (j.phase === "consolidating") setPhase("consolidating");
-        if (j.phase === "done") {
+        if (j.state === "consolidating") setPhase("consolidating");
+        if (j.state === "done") {
           if (timer.current) clearInterval(timer.current);
           setPhase("done");
         }
+        if (j.state === "expired") {
+          if (timer.current) clearInterval(timer.current);
+          setError("The job expired. Start a new one.");
+          setPhase("setup");
+        }
       };
-      await callBurst();
+      await poll();
       timer.current = setInterval(async () => {
-        try { await callBurst(); } catch { /* keep polling */ }
+        try { await poll(); } catch { /* keep polling */ }
       }, 20_000);
     } catch (e) {
       setError((e as Error).message);
@@ -139,7 +158,7 @@ export function SwarmFlow() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Swarm buy</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Boost</h1>
         {!connected && (
           <p className="text-sm text-muted-foreground">
             Connect your wallet in the top right.
@@ -252,7 +271,7 @@ export function SwarmFlow() {
           </CardContent>
           <CardFooter>
             <Button
-              onClick={payAndStart}
+              onClick={() => { trackEvent("swarm_pay", { buys, perBuy, deposit: q.depositSol.toFixed(3) }); payAndStart(); }}
               disabled={busy || !connected || !q.valid || curveOk === false || mint.length < 32}
             >
               {busy ? "Working…" : `Pay ${q.depositSol.toFixed(3)} SOL and start`}

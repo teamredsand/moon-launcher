@@ -11,7 +11,7 @@ Three services, three slugs:
 1. **Custom launch** (`/launch/custom`) — 0.15 SOL flat. The customer writes
    the name, the symbol, and the text, and uploads the image. The service
    pins it to IPFS and builds the launch transaction.
-2. **Swarm buy** (`/launch/boost`) — 25% of the deposit. The customer gives
+2. **Boost** (`/launch/boost`) — 25% of the deposit. The customer gives
    any pump.fun coin address and deposits SOL (0.5–50). Up to 1000 service
    wallets buy the coin in small bursts. All tokens move to the customer's
    wallet. The deposit covers buys + network costs; the service keeps 25%.
@@ -35,7 +35,7 @@ They start empty — each burst call tops up its batch from the treasury out
 of the customer's deposit (treasury pays buys + gas and keeps the 25%
 margin by construction). No pre-funding, no env-size problem.
 
-## Swarm buy economics (per wallet, mainnet-measured)
+## Boost economics (per wallet, mainnet-measured)
 
 | Item | SOL | Retrievable? |
 | --- | --- | --- |
@@ -135,3 +135,59 @@ npm run build && npm start
   layout, update `lib/constants.ts` from a live template transaction.
 - Boost wallets hold no customer funds. All buys are self-paid.
 - This is a tool, not financial advice. All payments are final.
+
+## Public API v1 (swarm/boost only)
+
+Payment is the auth — no wallet connection server-side. Every order is
+validated on-chain: exact lamports to the treasury + a unique memo reference.
+
+```
+POST /v1/swarm/quote          { perBuySol, buys } → price + breakdown
+POST /v1/swarm/orders         { mint, customer, perBuySol, buys, callbackUrl? }
+                              → order { id, deposit: {address, lamports, memo} }
+GET  /v1/swarm/orders/:id     → state + progress (awaiting_payment|buying|
+                              consolidating|done|expired)
+```
+
+Auth: `x-api-key` header (keys in `SWARM_API_KEYS="key:name,…"`, 60/min/key).
+Pay the order with a System transfer to `deposit.address` of exactly
+`deposit.lamports` lamports plus a memo-program instruction containing
+`deposit.memo`. The tick detects it (30 min expiry). Webhooks: HMAC-SHA256
+(`x-moonlauncher-signature`, signed with your API key) POSTed to
+`callbackUrl` on every state change.
+
+## Telegram bot
+
+Group wizard: `/swarm <coin address>` → recipient address → inline buy-size
+and wallet-count pickers → payment block (address + memo + exact amount).
+`/price <perBuy> <buys>` for quotes, `/status <orderId>` for progress.
+Progress posts edit in-place in the group.
+
+Setup: create a bot with BotFather, then
+
+```
+npx vercel env add TELEGRAM_BOT_TOKEN production
+npx vercel env add TG_WEBHOOK_SECRET production
+TG_TOKEN=… TG_SECRET=… ./scripts/tg-set-webhook.sh
+```
+
+## Job engine + ticks
+
+Swarm jobs live in the KV store (`lib/store.ts`: Vercel KV/Upstash when
+`KV_REST_API_URL`/`KV_REST_API_TOKEN` are set, memory in dev). **Production
+requires the KV integration** (Vercel dashboard → Marketplace → Upstash
+Redis, free tier) — without it each serverless instance has its own memory
+and jobs will not resolve across instances.
+
+Drivers (any of them advance jobs; advance is idempotent + throttled):
+- `scripts/swarm-tick-loop.sh` — this box, every 60 s
+- `.github/workflows/swarm-tick.yml` — GitHub Actions, every 5 min
+- `POST /api/boost/jobs/:id/advance` — browsers/API/bot, throttled 10 s
+
+## Notes
+
+- Analytics: GA4 (G-3V70FNBL8R) via `components/gtag.tsx`; conversion
+  events on connect/identity/launch/boost/swarm buttons (`lib/gtag.ts`).
+- React 19: the app currently pins React 18 (wallet-adapter + base-ui
+  compatibility). To upgrade: `npm i next@latest react@^19 react-dom@^19`
+  then re-test the wallet modal and launch flow end-to-end.

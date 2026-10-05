@@ -13,6 +13,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { CUSTOM_FEE_SOL, TIERS } from "@/lib/pricing";
 import { listLaunches } from "@/lib/launches";
+import { LaunchCard } from "@/components/shadcn-studio/card/launch-card";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://moonlauncher.app";
 
@@ -20,17 +21,18 @@ const services = [
   {
     slug: "/launch/custom",
     name: "Custom launch",
-    price: "0.15 SOL",
-    priceNote: "flat fee",
+    price: "from 0.15 SOL",
+    priceNote: "flat fee + your first buy",
     points: [
       "You write the name, the symbol, and the text.",
       "You upload the image.",
+      "You set the first buy.",
       "One signature. The coin is live.",
     ],
   },
   {
     slug: "/launch/boost",
-    name: "Swarm buy",
+    name: "Boost",
     price: "Pick your price & volume",
     priceNote: "up to 1000 buys",
     points: [
@@ -173,9 +175,6 @@ export default async function Home() {
             </Card>
           ))}
         </div>
-        <p className="text-sm text-muted-foreground">
-          These are start prices. They can change.
-        </p>
       </section>
 
       <Separator />
@@ -214,26 +213,10 @@ export default async function Home() {
             No launches yet. Be the first.
           </p>
         ) : (
-          <ul className="grid gap-4 sm:grid-cols-4">
+          <ul className="grid gap-4 sm:grid-cols-3">
             {launches.map((l) => (
               <li key={l.mint} className="h-full">
-                <Card className="flex h-full flex-col">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={l.imageUri}
-                    alt={`Image of the coin ${l.name}`}
-                    className="aspect-square w-full rounded-md object-cover"
-                    loading="lazy"
-                  />
-                  <CardHeader className="flex-1 p-3">
-                    <CardTitle className="truncate text-sm">
-                      {l.symbol}
-                    </CardTitle>
-                    <CardDescription className="truncate">
-                      {l.name}
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
+                <LaunchCard launch={l} />
               </li>
             ))}
           </ul>

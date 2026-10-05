@@ -5,7 +5,7 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 import { buyerAtaCreateIx, createCoinIx, feeTransferIx, freshCurveMinOut, nativeBuyIx } from "@/lib/pump";
-import { CUSTOM_FEE_SOL, IGNITION_FEE_SOL, launchTxNeeds, solToLamports, tier } from "@/lib/pricing";
+import { CUSTOM_FEE_SOL, FIRST_BUY_MAX_SOL, FIRST_BUY_MIN_SOL, solToLamports, tier } from "@/lib/pricing";
 import { connection, treasuryPubkey } from "@/lib/rpc";
 import { anchorSeedPairs, compileV0, simulate, v0Transaction } from "@/lib/sim";
 import { generateIdentity, generateImage } from "@/lib/minimax";
@@ -29,6 +29,7 @@ export async function POST(req: Request) {
     imageUri?: string;
     tier?: string;
     customer?: string;
+    firstBuySol?: number;
   };
   try {
     body = await req.json();
@@ -38,7 +39,13 @@ export async function POST(req: Request) {
 
   const t = tier(body.tier ?? "ignition");
   const isCustom = body.mode === "custom";
-  const launchFee = isCustom ? CUSTOM_FEE_SOL : IGNITION_FEE_SOL;
+  const launchFee = isCustom ? CUSTOM_FEE_SOL : 0.25;
+  const firstBuy =
+    body.firstBuySol !== undefined &&
+    body.firstBuySol >= FIRST_BUY_MIN_SOL &&
+    body.firstBuySol <= FIRST_BUY_MAX_SOL
+      ? body.firstBuySol
+      : t.firstBuySol;
   if (!body.customer) {
     return NextResponse.json({ error: "customer missing" }, { status: 400 });
   }
@@ -97,7 +104,7 @@ export async function POST(req: Request) {
   // 2. build the launch transaction
   const conn = connection();
   const mint = Keypair.generate();
-  const solIn = solToLamports(t.firstBuySol);
+  const solIn = solToLamports(firstBuy);
   const minOut = freshCurveMinOut(solIn);
 
   let mayhem = Keypair.generate().publicKey;
@@ -168,9 +175,9 @@ export async function POST(req: Request) {
   return NextResponse.json({
     txB64: Buffer.from(tx.serialize()).toString("base64"),
     mint: mint.publicKey.toBase58(),
-    needsSolLamports: isCustom
-      ? (8_000_000n + solToLamports(t.firstBuySol) + solToLamports(CUSTOM_FEE_SOL)).toString()
-      : launchTxNeeds(t).toString(),
+    needsSolLamports: (
+      8_000_000n + solToLamports(firstBuy) + solToLamports(launchFee)
+    ).toString(),
     tier: t.id,
     mode: isCustom ? "custom" : "ai",
     identity,

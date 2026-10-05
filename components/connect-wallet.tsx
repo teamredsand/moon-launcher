@@ -5,6 +5,7 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Button } from "@/components/ui/button";
+import { trackEvent } from "@/lib/gtag";
 
 /** The site's single call to action. Same shadcn Button as everything else:
  * disconnected → primary "Connect wallet" opens the wallet modal;
@@ -19,7 +20,7 @@ export function ConnectWallet() {
       <Button
         variant="outline"
         className="font-mono"
-        onClick={() => disconnect()}
+        onClick={() => { trackEvent("wallet_disconnect"); disconnect(); }}
         title="Disconnect"
       >
         {s.slice(0, 4)}…{s.slice(-4)}
@@ -27,7 +28,7 @@ export function ConnectWallet() {
     );
   }
   return (
-    <Button onClick={() => setVisible(true)} disabled={connecting}>
+    <Button onClick={() => { trackEvent("wallet_connect_click"); setVisible(true); }} disabled={connecting}>
       {connecting ? "Connecting…" : "Connect wallet"}
     </Button>
   );

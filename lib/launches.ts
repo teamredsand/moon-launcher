@@ -1,6 +1,7 @@
-/** Launches feed: a JSON array in the repo (data/launches.json), updated
- * through the GitHub contents API when GH_TOKEN + GH_REPO are configured,
- * with an in-memory fallback for local dev. */
+/** Launches feed. Storage order: Vercel KV ("launches:list", the same store
+ * the swarm jobs use) → GitHub contents file (data/launches.json) → memory. */
+
+import { storeGet, storeSet } from "./store";
 
 export interface LaunchRecord {
   mint: string;
@@ -16,15 +17,19 @@ export interface LaunchRecord {
 }
 
 const MEM: LaunchRecord[] = [];
+const KV_KEY = "launches:list";
+const MAX = 100;
 
 export async function listLaunches(): Promise<LaunchRecord[]> {
+  const fromKv = await storeGet<LaunchRecord[]>(KV_KEY);
+  if (Array.isArray(fromKv) && fromKv.length > 0) return fromKv;
   if (process.env.GH_TOKEN && process.env.GH_REPO) {
     try {
       const res = await github("GET", "");
       const rec = JSON.parse(
         Buffer.from(res.content ?? "W10=", "base64").toString("utf8")
       ) as LaunchRecord[];
-      if (Array.isArray(rec)) return rec;
+      if (Array.isArray(rec) && rec.length > 0) return rec;
     } catch {
       /* fall through to memory */
     }
@@ -34,29 +39,28 @@ export async function listLaunches(): Promise<LaunchRecord[]> {
 
 export async function recordLaunch(rec: LaunchRecord): Promise<void> {
   MEM.unshift(rec);
-  if (MEM.length > 100) MEM.pop();
+  if (MEM.length > MAX) MEM.pop();
+  const cur = (await storeGet<LaunchRecord[]>(KV_KEY)) ?? [];
+  cur.unshift(rec);
+  await storeSet(KV_KEY, cur.slice(0, MAX));
   if (process.env.GH_TOKEN && process.env.GH_REPO) {
     try {
-      const cur = await github("GET", "");
-      let sha: string | undefined;
+      const gh = await github("GET", "");
       let list: LaunchRecord[] = [];
-      if (!cur.sha) {
-        list = [];
-      } else {
-        sha = cur.sha;
-        list = JSON.parse(
-          Buffer.from(cur.content ?? "W10=", "base64").toString("utf8")
+      if (gh.sha) {
+        const parsed = JSON.parse(
+          Buffer.from(gh.content ?? "W10=", "base64").toString("utf8")
         ) as LaunchRecord[];
-        if (!Array.isArray(list)) list = [];
+        if (Array.isArray(parsed)) list = parsed;
       }
       list.unshift(rec);
       await github("PUT", "", {
         message: `launch: ${rec.symbol} (${rec.mint.slice(0, 8)})`,
-        content: Buffer.from(JSON.stringify(list.slice(0, 100), null, 2)).toString("base64"),
-        sha,
+        content: Buffer.from(JSON.stringify(list.slice(0, MAX), null, 2)).toString("base64"),
+        sha: gh.sha,
       });
     } catch {
-      /* memory copy already updated */
+      /* KV copy already updated */
     }
   }
 }

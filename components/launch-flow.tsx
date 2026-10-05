@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { BoostStep } from "@/components/boost-step";
+import { trackEvent } from "@/lib/gtag";
 import {
   Card,
   CardContent,
@@ -24,15 +25,7 @@ interface Identity {
   description: string;
 }
 
-type Phase =
-  | "theme"
-  | "identity"
-  | "signing"
-  | "confirming"
-  | "launched"
-  | "boostPay"
-  | "boosting"
-  | "done";
+type Phase = "theme" | "identity" | "signing" | "confirming" | "launched";
 
 export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
   const { connection } = useConnection();
@@ -42,6 +35,7 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
   const [theme, setTheme] = useState("");
   const [tierId, setTierId] = useState<TierId>(initialTier);
   const [identity, setIdentity] = useState<Identity | null>(null);
+  const [firstBuy, setFirstBuy] = useState<number>(TIERS[initialTier].firstBuySol);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [metadataUri, setMetadataUri] = useState<string | null>(null);
@@ -49,12 +43,7 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
   const [busy, setBusy] = useState(false);
   const [coinUrl, setCoinUrl] = useState<string | null>(null);
   const [mint, setMint] = useState<string | null>(null);
-  const [boost, setBoost] = useState({ done: 0, target: 0 });
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const t = TIERS[tierId];
-
-  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
   const makeIdentity = useCallback(async () => {
     setError(null);
@@ -85,7 +74,7 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
     setBusy(true);
     try {
       // check wallet balance
-      const needs = t.firstBuySol + t.feeSol + 0.01;
+      const needs = firstBuy + t.feeSol + 0.01;
       const bal = await connection.getBalance(publicKey);
       if (bal < needs * LAMPORTS_PER_SOL) {
         throw new Error(
@@ -102,6 +91,7 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
           imageUri,
           tier: tierId,
           customer: publicKey.toBase58(),
+          firstBuySol: firstBuy,
         }),
       });
       const pj = await prep.json();
@@ -137,72 +127,15 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
       const cj = await conf.json();
       if (!conf.ok) throw new Error(cj.error ?? "confirm failed");
       setCoinUrl(cj.url);
-      setPhase(t.wallets > 0 ? "boostPay" : "done");
+      setPhase("launched");
     } catch (e) {
       setError((e as Error).message);
       setPhase("identity");
     } finally {
       setBusy(false);
     }
-  }, [publicKey, signTransaction, identity, metadataUri, imageUri, tierId, t, connection]);
+  }, [publicKey, signTransaction, identity, metadataUri, imageUri, tierId, t, firstBuy, connection]);
 
-  const payAndBoost = useCallback(async () => {
-    if (!publicKey || !signTransaction || !mint) return;
-    setError(null);
-    setBusy(true);
-    try {
-      const treasury = process.env.NEXT_PUBLIC_TREASURY;
-      if (!treasury) throw new Error("service not configured");
-      const tx = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey(treasury),
-          lamports: Math.round(t.boostFeeSol * LAMPORTS_PER_SOL),
-        })
-      );
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = publicKey;
-      const signed = await signTransaction(tx);
-      const paymentSig = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(
-        { signature: paymentSig, blockhash, lastValidBlockHeight },
-        "confirmed"
-      );
-
-      setPhase("boosting");
-      const callBurst = async () => {
-        const res = await fetch("/api/boost/burst", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            mint,
-            customer: publicKey.toBase58(),
-            tier: tierId,
-            paymentSig,
-          }),
-        });
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error ?? "boost failed");
-        setBoost({ done: j.done, target: j.target });
-        if (j.finalized) {
-          if (timer.current) clearInterval(timer.current);
-          setPhase("done");
-        }
-      };
-      await callBurst();
-      if (phase !== "done") {
-        timer.current = setInterval(async () => {
-          try { await callBurst(); } catch { /* keep polling */ }
-        }, 20_000);
-      }
-    } catch (e) {
-      setError((e as Error).message);
-      setPhase("boostPay");
-    } finally {
-      setBusy(false);
-    }
-  }, [publicKey, signTransaction, mint, t, connection, tierId, phase]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
@@ -252,7 +185,10 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
                   <button
                     key={x.id}
                     type="button"
-                    onClick={() => setTierId(x.id)}
+                    onClick={() => {
+                      setTierId(x.id);
+                      setFirstBuy(TIERS[x.id].firstBuySol);
+                    }}
                     className={
                       "rounded-md border p-3 text-left text-sm " +
                       (tierId === x.id
@@ -278,9 +214,28 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
                   : "No boost. The coin starts with your first buy."}
               </p>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="firstBuy">First buy (SOL)</Label>
+              <Input
+                id="firstBuy"
+                type="number"
+                min={0}
+                max={10}
+                step={0.01}
+                value={firstBuy}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v) && v >= 0 && v <= 10) setFirstBuy(v);
+                }}
+              />
+              <p className="text-sm text-muted-foreground">
+                Your wallet buys this amount in the launch transaction. Like
+                the first buy on pump.fun.
+              </p>
+            </div>
           </CardContent>
           <CardFooter>
-            <Button onClick={makeIdentity} disabled={busy || theme.length < 3}>
+            <Button onClick={() => { trackEvent("make_identity", { tier: tierId }); makeIdentity(); }} disabled={busy || theme.length < 3}>
               {busy ? "Working…" : "Make the identity"}
             </Button>
           </CardFooter>
@@ -334,8 +289,11 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Your wallet pays {t.firstBuySol} SOL for the first buy and{" "}
-              {t.feeSol} SOL total for the service.
+              Your wallet pays {firstBuy} SOL for the first buy
+              {t.wallets > 0
+                ? ` and ${t.feeSol} SOL for the swarm to buy on launch`
+                : ` and ${t.feeSol} SOL for the service`}
+              .
             </p>
             {!connected && (
               <p className="text-sm">Connect your wallet to continue.</p>
@@ -343,7 +301,7 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
           </CardContent>
           <CardFooter>
             <Button
-              onClick={signAndSend}
+              onClick={() => { trackEvent("launch_click", { tier: tierId, firstBuy }); signAndSend(); }}
               disabled={busy || !connected || !publicKey}
             >
               {busy ? "Working…" : "Launch"}
@@ -363,53 +321,31 @@ export function LaunchFlow({ initialTier }: { initialTier: TierId }) {
         </Card>
       )}
 
-      {coinUrl && (phase === "boostPay" || phase === "boosting" || phase === "done") && (
-        <Card className="border-primary">
-          <CardHeader>
-            <CardTitle>Your coin is live</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p>
-              <a
-                href={coinUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-primary underline"
-              >
-                See your coin on pump.fun
-              </a>
-            </p>
-            {phase === "boostPay" && (
-              <>
-                <p>
-                  Step 3 — Boost. Pay {t.boostFeeSol} SOL. Then {t.wallets}{" "}
-                  wallets buy your coin in small steps. This takes about 30
-                  minutes.
-                </p>
-                <Button onClick={payAndBoost} disabled={busy}>
-                  {busy ? "Working…" : `Pay ${t.boostFeeSol} SOL and start`}
-                </Button>
-              </>
-            )}
-            {phase === "boosting" && (
-              <div className="space-y-2">
-                <p>
-                  Boost in progress: {boost.done} of {boost.target} wallets
-                  bought. Keep this page open.
-                </p>
-                <Progress
-                  value={boost.target ? (boost.done / boost.target) * 100 : 0}
-                />
-              </div>
-            )}
-            {phase === "done" && (
+      {phase === "launched" && coinUrl && mint && (
+        <>
+          <Card className="border-primary">
+            <CardHeader>
+              <CardTitle>Your coin is live</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
               <p>
-                All tokens are in your wallet. The boost is complete. You
-                control the supply.
+                <a
+                  href={coinUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary underline"
+                >
+                  See your coin on pump.fun
+                </a>
               </p>
-            )}
-          </CardContent>
-        </Card>
+              <p>The first tokens are in your wallet. You own the coin.</p>
+            </CardContent>
+          </Card>
+          <BoostStep
+            mint={mint}
+            defaultChoice={t.wallets > 0 ? (t.id as "boost" | "moonshot") : null}
+          />
+        </>
       )}
     </div>
   );

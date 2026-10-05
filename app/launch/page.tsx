@@ -22,18 +22,19 @@ const services = [
   {
     slug: "/launch/custom",
     name: "Custom launch",
-    price: `${CUSTOM_FEE_SOL} SOL`,
-    priceNote: "flat fee",
+    price: `from ${CUSTOM_FEE_SOL} SOL`,
+    priceNote: "flat fee + your first buy",
     points: [
       "You write the name, the symbol, and the text.",
       "You upload the image.",
+      "You set the first buy.",
       "We build the launch transaction.",
       "One signature. The coin is live.",
     ],
   },
   {
     slug: "/launch/boost",
-    name: "Swarm buy",
+    name: "Boost",
     price: "Pick your price & volume",
     priceNote: `up to ${SWARM_MAX_BUYS} buys`,
     points: [

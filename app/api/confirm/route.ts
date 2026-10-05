@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 import { PUMP_PROGRAM_ID } from "@/lib/constants";
 import { curveForMint } from "@/lib/pdas";
-import { IGNITION_FEE_SOL, solToLamports, tier } from "@/lib/pricing";
+import { CUSTOM_FEE_SOL, IGNITION_FEE_SOL, solToLamports, tier } from "@/lib/pricing";
 import { connection, treasuryPubkey } from "@/lib/rpc";
 import { recordLaunch } from "@/lib/launches";
 
@@ -15,6 +15,7 @@ export async function POST(req: Request) {
     sig?: string;
     mint?: string;
     tier?: string;
+    mode?: "ai" | "custom";
     identity?: { name: string; symbol: string; description: string };
     imageUri?: string;
     metadataUri?: string;
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
 
   // verify fee transfer to treasury (ignition fee part)
   let feeOk = false;
-  const feeLamports = solToLamports(IGNITION_FEE_SOL);
+  const feeLamports = solToLamports(body.mode === "custom" ? CUSTOM_FEE_SOL : IGNITION_FEE_SOL);
   if (treasury && tx.meta) {
     const keyStr = tx.transaction.message.getAccountKeys({
       accountKeysFromLookups: tx.meta.loadedAddresses,
