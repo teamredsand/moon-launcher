@@ -1,5 +1,6 @@
 import {
   AccountMeta,
+  Keypair,
   PublicKey,
   SystemProgram,
   TransactionInstruction,
@@ -79,7 +80,11 @@ export function createCoinIx(args: CreateCoinArgs): TransactionInstruction {
   const { mint, creator, name, symbol, uri, mayhemState } = args;
   const curve = curveForMint(mint);
   const curveAta = findAta(curve, mint);
-  const slot13 = args.slot13 ?? PublicKey.default;
+  // [13] is the mayhem_token_vault slot: the program enforces mutability on it
+  // (post-2026-10-05 upgrade). PublicKey.default collides with the system
+  // program at [6] and merges readonly -> ConstraintMut. A fresh random key
+  // matches the proven CLI launcher behaviour (writable, unconstrained).
+  const slot13 = args.slot13 ?? Keypair.generate().publicKey;
   const data = Buffer.concat([
     CREATE_DISC,
     anchorStr(name),
