@@ -252,7 +252,9 @@ describe("swarm derivation", () => {
   });
   it("different mints get fresh wallet sets (per-job salting)", async () => {
     process.env.SWARM_SEED = Buffer.alloc(32, 7).toString("base64");
-    const fresh = await import("../lib/rpc?salt-test=1");
+    const fresh = (await import(
+      "../lib/rpc" + "?salt-test=1"
+    )) as typeof import("../lib/rpc");
     const a = fresh.swarmWallets("mintA");
     const b = fresh.swarmWallets("mintB");
     const setA = new Set(a.map((w) => w.pubkey));

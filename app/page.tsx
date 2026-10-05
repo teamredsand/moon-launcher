@@ -79,7 +79,15 @@ const faqs = [
   },
   {
     q: "What is a boost?",
-    a: "A boost is a set of small buys. Each wallet buys 0.0005 SOL of your coin. Then all tokens move to your wallet.",
+    a: "A boost is a set of small buys from many wallets. You set the size of each buy and the number of wallets. Then all tokens move to your wallet.",
+  },
+  {
+    q: "Are the buys from new wallets?",
+    a: "Yes. Every job gets a fresh set of addresses. No wallet is used twice for the same coin.",
+  },
+  {
+    q: "What does the swarm cost?",
+    a: "The price is calculated from your settings: the buys, the network costs, and the service fee. You see the full breakdown before you pay.",
   },
   {
     q: "Can I get my SOL back?",
@@ -124,8 +132,8 @@ export default async function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {/* Hero */}
-      <section className="flex flex-col items-center gap-6 py-20 text-center sm:py-28">
+      {/* Hero — the service cards are the calls to action */}
+      <section className="flex flex-col items-center gap-6 py-16 text-center sm:py-20">
         <MoonLogo className="size-12 text-primary" />
         <h1 className="max-w-2xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">
           Launch, boost &amp; swarm tokens on pump.fun
@@ -133,17 +141,7 @@ export default async function Home() {
         <p className="max-w-xl text-muted-foreground text-balance">
           Launch with up to 1000 wallets boosting your token to the moon
         </p>
-        <p className="text-sm text-muted-foreground">
-          Pick a service below. No key sharing. Your wallet keeps the tokens.
-        </p>
-      </section>
-
-      <Separator />
-
-      {/* Services */}
-      <section id="services" className="scroll-mt-20 py-16">
-        <h2 className="mb-8 text-2xl font-semibold tracking-tight">Services</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div id="services" className="mt-6 grid w-full scroll-mt-20 gap-4 text-left sm:grid-cols-3">
           {services.map((s) => (
             <Card
               key={s.slug}
@@ -175,10 +173,12 @@ export default async function Home() {
             </Card>
           ))}
         </div>
-        <p className="mt-4 text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           These are start prices. They can change.
         </p>
       </section>
+
+      <Separator />
 
       {/* How it works */}
       <section id="how" className="scroll-mt-20 py-16">
